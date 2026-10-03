@@ -2,6 +2,7 @@ name: Enhanced | macOS | Dev Build
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
