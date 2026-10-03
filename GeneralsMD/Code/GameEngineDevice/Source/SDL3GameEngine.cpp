@@ -166,6 +166,8 @@ struct TouchState {
 	float gestureCenterY = 0.0f;
 	bool rotationActive = false;
 	bool twoFingerMoved = false;
+	bool finger1Released = false;
+	bool finger2Released = false;
 
 	Uint64 downTicks = 0;
 	Uint64 lastTapTicks = 0;
@@ -189,8 +191,8 @@ bool s_haveSyntheticPosition = false;
 static float normalizedAngleDelta(float a, float b)
 {
 	float d = a - b;
-	while (d > SDL_PI_F) d -= 2.0f * SDL_PI_F;
-	while (d < -SDL_PI_F) d += 2.0f * SDL_PI_F;
+	while (d > 3.14159265358979323846f) d -= 2.0f * 3.14159265358979323846f;
+	while (d < -3.14159265358979323846f) d += 2.0f * 3.14159265358979323846f;
 	return d;
 }
 
@@ -272,6 +274,8 @@ void beginTwoFingerGesture(SDL3Mouse *mouse, SDL_Window *window, int winW, int w
 	s_touch.gestureRotationAccum = 0.0f;
 	s_touch.rotationActive = false;
 	s_touch.twoFingerMoved = false;
+	s_touch.finger1Released = false;
+	s_touch.finger2Released = false;
 	s_touch.phase = TouchState::TWO_FINGER_GESTURE;
 
 	// Put the synthetic cursor at the gesture centroid, but do not press any
@@ -398,7 +402,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.lastAngle = angle;
 
 			const float accumulatedDegrees =
-				SDL_fabsf(s_touch.gestureRotationAccum) * (180.0f / SDL_PI_F);
+				SDL_fabsf(s_touch.gestureRotationAccum) * (180.0f / 3.14159265358979323846f);
 
 			if (!s_touch.rotationActive && accumulatedDegrees >= ROTATION_THRESHOLD_DEGREES) {
 				s_touch.rotationActive = true;
@@ -409,7 +413,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			if (s_touch.rotationActive) {
 				// Convert angular motion into a smooth horizontal cursor delta.
 				// No snapping: every motion event is passed through.
-				const float rotationPixels = deltaAngle * (180.0f / SDL_PI_F) * 6.0f;
+				const float rotationPixels = deltaAngle * (180.0f / 3.14159265358979323846f) * 6.0f;
 				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
 				                   s_touch.gestureCenterX + rotationPixels, cy);
 				s_touch.gestureCenterX += rotationPixels;
@@ -426,25 +430,31 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		}
 
 		if (s_touch.phase == TouchState::TWO_FINGER_GESTURE) {
-			if (s_touch.rotationActive) {
-				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
-				                   s_touch.gestureCenterX, s_touch.gestureCenterY,
-				                   SDL_BUTTON_MIDDLE);
+			if (firstUp) {
+				s_touch.finger1Released = true;
+			}
+			if (secondUp) {
+				s_touch.finger2Released = true;
 			}
 
-			// Only a short, stationary, non-cancelled two-finger slap becomes
-			// the PC right mouse button. Any movement is pinch/rotate, never cancel.
-			if (!s_touch.twoFingerMoved && event.type == SDL_EVENT_FINGER_UP &&
-			    firstUp && secondUp) {
-				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
-				                   s_touch.gestureCenterX, s_touch.gestureCenterY,
-				                   SDL_BUTTON_RIGHT);
-				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
-				                   s_touch.gestureCenterX, s_touch.gestureCenterY,
-				                   SDL_BUTTON_RIGHT);
-			}
+			if (s_touch.finger1Released && s_touch.finger2Released) {
+				if (s_touch.rotationActive) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
+					                   s_touch.gestureCenterX, s_touch.gestureCenterY,
+					                   SDL_BUTTON_MIDDLE);
+				}
 
-			if (firstUp && secondUp) {
+				// Only a short, stationary, non-cancelled two-finger slap becomes
+				// the PC right mouse button. Any movement is pinch/rotate, never cancel.
+				if (!s_touch.twoFingerMoved && event.type == SDL_EVENT_FINGER_UP) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
+					                   s_touch.gestureCenterX, s_touch.gestureCenterY,
+					                   SDL_BUTTON_RIGHT);
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
+					                   s_touch.gestureCenterX, s_touch.gestureCenterY,
+					                   SDL_BUTTON_RIGHT);
+				}
+
 				s_touch.phase = TouchState::IDLE;
 			}
 			break;
