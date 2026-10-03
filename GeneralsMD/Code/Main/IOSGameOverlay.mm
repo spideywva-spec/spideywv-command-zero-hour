@@ -137,7 +137,7 @@ static void GXShowEscButton(void)
 {
     [self.layer removeAllAnimations];
     GXShowEscButton();
-    self.alpha = 1.0;
+    self.layer.opacity = 1.0;
     GXPushEscapeEvent(false);
     [super touchesCancelled:touches withEvent:event];
 }
