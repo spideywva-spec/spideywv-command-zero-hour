@@ -9,7 +9,6 @@ static UIButton *s_escButton = nil;
 static SDL_Window *s_sdlWindow = nullptr;
 static SDL_WindowID s_windowID = 0;
 static id s_keyWindowObserver = nil;
-static NSUInteger s_escVisibilityGeneration = 0;
 
 static UIWindow *GXFindSDLWindow(void)
 {
@@ -74,12 +73,44 @@ static void GXShowEscButton(void)
         return;
     }
 
-    // ESC must remain permanently visible and hittable.
-    // Do not fade it out or change alpha/opacity after a timer.
+    // Stop the 3-second hide animation and bring ESC back visually.
+    // The UIButton itself is never hidden or disabled, so even at alpha 0
+    // the same hit area remains available for the next tap.
     [s_escButton.layer removeAllAnimations];
-    s_escButton.layer.opacity = 1.0;
-    s_escButton.alpha = 1.0;
+    [s_escButton.superview.layer removeAllAnimations];
+
     s_escButton.hidden = NO;
+    s_escButton.userInteractionEnabled = YES;
+
+    [UIView animateWithDuration:0.25
+                          delay:0.0
+                        options:UIViewAnimationOptionBeginFromCurrentState |
+                                UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionCurveEaseOut
+                     animations:^{
+        s_escButton.alpha = 1.0;
+        s_escButton.layer.opacity = 1.0;
+    }
+                     completion:nil];
+}
+
+static void GXFadeEscButtonAfterUse(void)
+{
+    if (s_escButton == nil) {
+        return;
+    }
+
+    // Keep the control alive and hittable. Only its visual opacity changes.
+    [UIView animateWithDuration:3.0
+                          delay:0.0
+                        options:UIViewAnimationOptionBeginFromCurrentState |
+                                UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+        s_escButton.alpha = 0.0;
+        s_escButton.layer.opacity = 0.0;
+    }
+                     completion:nil];
 }
 
 @interface GXEscButton : UIButton
@@ -90,19 +121,27 @@ static void GXShowEscButton(void)
 - (void)escTouchDown:(UIButton *)sender
 {
     (void)sender;
-    [self.layer removeAllAnimations];
+
+    // A second press at the same ESC hit area cancels the fade and
+    // smoothly restores the button from 0% -> 100% visual opacity.
     GXShowEscButton();
+
     self.layer.opacity = 0.65;
+    self.alpha = 0.65;
     GXPushEscapeEvent(true);
 }
 
 - (void)escTouchUp:(UIButton *)sender
 {
     (void)sender;
-    [self.layer removeAllAnimations];
-    GXShowEscButton();
+
     self.layer.opacity = 1.0;
+    self.alpha = 1.0;
     GXPushEscapeEvent(false);
+
+    // After ESC is used, fade only the visual appearance 100% -> 0%
+    // over exactly 3 seconds. The hit target remains active.
+    GXFadeEscButtonAfterUse();
 }
 
 @end
@@ -149,6 +188,8 @@ static void GXAttachEscButtonToSDLWindow(void)
             UIViewAutoresizingFlexibleBottomMargin;
 
         s_escButton = button;
+        s_escButton.alpha = 1.0;
+        s_escButton.layer.opacity = 1.0;
         s_escButton.userInteractionEnabled = YES;
         s_escButton.multipleTouchEnabled = NO;
     }
@@ -161,7 +202,13 @@ static void GXAttachEscButtonToSDLWindow(void)
     }
 
     [hostWindow bringSubviewToFront:s_escButton];
-    GXShowEscButton();
+
+    // Only initialize visibility when the button is first attached.
+    // Re-attaching/retrying must not cancel an active 3-second fade.
+    if (s_escButton.alpha <= 0.001) {
+        s_escButton.alpha = 0.0;
+        s_escButton.layer.opacity = 0.0;
+    }
 
     fprintf(stderr,
             "INFO: iOS in-game ESC overlay attached to SDL UIWindow at x=%.0f y=%.0f size=%.0fx%.0f\n",
@@ -221,8 +268,6 @@ extern "C" void GeneralsXRemoveIOSEscOverlay(void)
                 removeObserver:s_keyWindowObserver];
             s_keyWindowObserver = nil;
         }
-
-        ++s_escVisibilityGeneration;
 
         if (s_escButton != nil) {
             [s_escButton.layer removeAllAnimations];
