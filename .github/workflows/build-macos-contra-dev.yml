@@ -3,23 +3,6 @@ name: Contra X | macOS | Dev Build
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-    paths:
-      - 'GeneralsMD/**'
-      - 'Core/**'
-      - 'Dependencies/Utility/**'
-      - 'resources/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'vcpkg.json'
-      - 'vcpkg-lock.json'
-      - 'references/fbraz3-dxvk'
-      - 'scripts/build/macos/**'
-      - '.github/workflows/build-macos-contra-dev.yml'
-
 permissions:
   contents: read
 
