@@ -217,6 +217,8 @@ NSString *ZeroHourSettingsPath()
     return [dir stringByAppendingPathComponent:@"ZeroHourSettings.ini"];
 }
 
+NSString *EngineOptionsPath();
+
 NSString *GameOptionsPath()
 {
     // This must be byte-for-byte the same logical path used by the engine.
