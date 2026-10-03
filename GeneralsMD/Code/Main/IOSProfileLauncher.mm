@@ -2274,6 +2274,10 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         @"ShowTrees": self.showPropsSwitch.on ? @"Yes" : @"No",
         @"TextureFilter": textureFilter,
         @"TextureReduction": [NSString stringWithFormat:@"%ld", (long)textureReduction],
+        @"TextureReductionFactor": [NSString stringWithFormat:@"%ld", (long)textureReduction],
+        @"FPSLimit": self.fpsLimitSwitch.on ? @"Yes" : @"No",
+        @"UseFPSLimit": self.fpsLimitSwitch.on ? @"Yes" : @"No",
+        @"FramesPerSecondLimit": [NSString stringWithFormat:@"%.0f", self.fpsSlider.value],
         @"UnitVoices": voices,
         @"UseCloudMap": self.cloudShadowsSwitch.on ? @"Yes" : @"No",
         @"UseLightMap": self.groundLightingSwitch.on ? @"Yes" : @"No",
@@ -2299,7 +2303,11 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         @"DynamicLOD": @"No",
         @"HeatEffects": @"No",
         @"TextureReduction": @"0",
+        @"TextureReductionFactor": @"0",
         @"MaxParticleCount": @"2500",
+        @"FPSLimit": @"yes",
+        @"UseFPSLimit": @"yes",
+        @"FramesPerSecondLimit": @"60",
         @"TextureFilter": @"Anisotropic",
         @"AnisotropyLevel": @"8",
         @"FPSLimit": @"yes",\n        @"UseFPSLimit": @"yes",\n        @"FramesPerSecondLimit": @"60",
@@ -2495,7 +2503,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.dynamicLODSwitch.on = SettingBoolValue(values, @"DynamicLOD", NO);
     self.heatEffectsSwitch.on = SettingBoolValue(values, @"HeatEffects", NO);
 
-    NSInteger textureReduction = [SettingValue(values, @"TextureReduction", @"0") integerValue];
+    NSInteger textureReduction = [SettingValue(values, @"TextureReduction", SettingValue(values, @"TextureReductionFactor", @"0")) integerValue];
     self.textureQualitySegment.selectedSegmentIndex = MAX(0, MIN(2, textureReduction));
 
     NSInteger particleCount = [SettingValue(values, @"MaxParticleCount", @"2500") integerValue];
@@ -2568,8 +2576,22 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.enforceMaxSwitch.on = [self boolSetting:@"EnforceMaxCameraHeight" contents:contents fallback:NO];
         self.scrollSpeedSlider.value = [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f];
         self.drawDistanceSlider.value = [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.20f];
-        self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
-        self.fpsSlider.value = [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
+
+        // FPS is mirrored in both the engine bridge and Options.ini. Prefer
+        // Options.ini when present, while accepting either alias.
+        NSDictionary<NSString *, NSString *> *gameOptions = ReadKeyValueFile(GameOptionsPath());
+        NSString *fpsLimitValue = gameOptions[@"UseFPSLimit"];
+        if (fpsLimitValue.length == 0)
+            fpsLimitValue = gameOptions[@"FPSLimit"];
+        if (fpsLimitValue.length > 0)
+            self.fpsLimitSwitch.on = SettingBoolValue(@{@"Value": fpsLimitValue}, @"Value", YES);
+        else
+            self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
+
+        NSString *fpsValue = gameOptions[@"FramesPerSecondLimit"];
+        self.fpsSlider.value = fpsValue.length > 0
+            ? fpsValue.floatValue
+            : [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
         self.settingsStatus.text = @"";
     }
 
