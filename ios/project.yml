@@ -19,6 +19,8 @@ targets:
     platform: iOS
     sources:
       - path: Stub
+    resources:
+      - path: ../resources/intro.mp4
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.ammaar.generalszh
