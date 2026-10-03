@@ -91,8 +91,9 @@ static void GXShowEscButton(void)
                 return;
             }
 
-            // Fade the visual layer to 0% over 2 seconds, but keep the
-            // UIButton itself at alpha=1 so UIKit still hit-tests it when invisible.
+            // Fade the visual layer to effectively 0% over 2 seconds.
+            // Keep UIView alpha at 1.0 because UIKit ignores views whose alpha
+            // is below 0.01 during hit-testing.
             [UIView animateWithDuration:2.0
                                   delay:0.0
                                 options:UIViewAnimationOptionBeginFromCurrentState |
@@ -101,7 +102,7 @@ static void GXShowEscButton(void)
                              animations:^{
                 if (generation == s_escVisibilityGeneration &&
                     s_escButton != nil) {
-                    s_escButton.layer.opacity = 0.0;
+                    s_escButton.layer.opacity = 0.001;
                 }
             } completion:nil];
         });
@@ -180,6 +181,8 @@ static void GXAttachEscButtonToSDLWindow(void)
             UIViewAutoresizingFlexibleBottomMargin;
 
         s_escButton = button;
+        s_escButton.userInteractionEnabled = YES;
+        s_escButton.multipleTouchEnabled = NO;
     }
 
     s_escButton.frame = CGRectMake(left, top, buttonSize, buttonSize);
