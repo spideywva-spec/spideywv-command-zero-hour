@@ -195,14 +195,26 @@ BOOL EnsureGameRootDirectory()
 
 NSString *IOSIPadOverridesPath()
 {
-    // Documents itself is the Generals ZH root; keep the INI beside all installed game files.
-    return [GameRootPath() stringByAppendingPathComponent:@"iOSIPadOverrides.ini"];
+    // Keep launcher-only settings in the same iOS user-data directory used by the engine.
+    NSString *dir = [NSHomeDirectory()
+        stringByAppendingPathComponent:@"Library/Application Support/GeneralsX/GeneralsZH"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    return [dir stringByAppendingPathComponent:@"iOSIPadOverrides.ini"];
 }
 
 NSString *ZeroHourSettingsPath()
 {
-    // Documents itself is the Generals ZH root; keep the INI beside all installed game files.
-    return [GameRootPath() stringByAppendingPathComponent:@"ZeroHourSettings.ini"];
+    // Keep ZeroHour launcher settings persistent beside the engine's Options.ini.
+    NSString *dir = [NSHomeDirectory()
+        stringByAppendingPathComponent:@"Library/Application Support/GeneralsX/GeneralsZH"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    return [dir stringByAppendingPathComponent:@"ZeroHourSettings.ini"];
 }
 
 NSString *GameOptionsPath()
