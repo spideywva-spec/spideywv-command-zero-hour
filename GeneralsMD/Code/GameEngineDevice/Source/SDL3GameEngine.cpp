@@ -154,6 +154,9 @@ struct TouchState {
 
 	float downX = 0.0f, downY = 0.0f;
 	float lastX = 0.0f, lastY = 0.0f;
+	float velocityX = 0.0f, velocityY = 0.0f;
+	Uint64 lastMotionTicks = 0;
+	bool momentumActive = false;
 	float f1x = 0.0f, f1y = 0.0f;
 	float f2x = 0.0f, f2y = 0.0f;
 
@@ -183,6 +186,9 @@ constexpr float TOUCH_MOVE_EPSILON_PX = 3.0f;
 constexpr float TWO_FINGER_SLOP_PX = 10.0f;
 constexpr float ROTATION_THRESHOLD_DEGREES = 40.0f;
 constexpr float PINCH_WHEEL_SCALE = 0.035f;
+constexpr float MOMENTUM_STOP_SPEED_PX_PER_SEC = 8.0f;
+constexpr float MOMENTUM_FRICTION_PER_SEC = 5.5f;
+constexpr float MOMENTUM_MAX_SPEED_PX_PER_SEC = 5000.0f;
 
 float s_lastSyntheticX = 0.0f;
 float s_lastSyntheticY = 0.0f;
@@ -294,6 +300,10 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 	switch (event.type) {
 	case SDL_EVENT_FINGER_DOWN:
 		if (s_touch.phase == TouchState::IDLE) {
+			s_touch.momentumActive = false;
+			s_touch.velocityX = 0.0f;
+			s_touch.velocityY = 0.0f;
+			s_touch.lastMotionTicks = SDL_GetTicks();
 			s_touch.phase = TouchState::PENDING_ONE;
 			s_touch.finger1 = event.tfinger.fingerID;
 			s_touch.downX = s_touch.lastX = px;
@@ -346,6 +356,11 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			const float moved = SDL_sqrtf(dx * dx + dy * dy);
 
 			if (moved >= TOUCH_MOVE_EPSILON_PX) {
+				const Uint64 nowTicks = SDL_GetTicks();
+				const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
+				s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (px - s_touch.lastX) / dt));
+				s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (py - s_touch.lastY) / dt));
+				s_touch.lastMotionTicks = nowTicks;
 				const bool selectionArmed =
 					(SDL_GetTicks() - s_touch.downTicks) >= SELECTION_HOLD_MS;
 				if (selectionArmed) {
@@ -365,6 +380,11 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		}
 		else if (s_touch.phase == TouchState::CAMERA_PAN &&
 		         event.tfinger.fingerID == s_touch.finger1) {
+			const Uint64 nowTicks = SDL_GetTicks();
+			const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
+			s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (px - s_touch.lastX) / dt));
+			s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (py - s_touch.lastY) / dt));
+			s_touch.lastMotionTicks = nowTicks;
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
 		}
 		else if (s_touch.phase == TouchState::SELECTION &&
@@ -491,9 +511,14 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			}
 			s_touch.phase = TouchState::IDLE;
 		} else if (s_touch.phase == TouchState::CAMERA_PAN) {
-			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
-			                   px, py, SDL_BUTTON_RIGHT);
-			s_touch.phase = TouchState::IDLE;
+			const float speed = SDL_sqrtf(s_touch.velocityX * s_touch.velocityX + s_touch.velocityY * s_touch.velocityY);
+			if (speed > MOMENTUM_STOP_SPEED_PX_PER_SEC) {
+				s_touch.momentumActive = true;
+				s_touch.phase = TouchState::IDLE;
+			} else {
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, px, py, SDL_BUTTON_RIGHT);
+				s_touch.phase = TouchState::IDLE;
+			}
 		} else if (s_touch.phase == TouchState::SELECTION) {
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
 			                   px, py, SDL_BUTTON_LEFT);
@@ -502,6 +527,25 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		break;
 	}
 	}
+}
+
+void updateTouchMomentum(SDL3Mouse *mouse, SDL_Window *window)
+{
+	if (!s_touch.momentumActive || !mouse || !window) return;
+	const float speed = SDL_sqrtf(s_touch.velocityX * s_touch.velocityX + s_touch.velocityY * s_touch.velocityY);
+	if (speed <= MOMENTUM_STOP_SPEED_PX_PER_SEC) {
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, s_lastSyntheticX, s_lastSyntheticY, SDL_BUTTON_RIGHT);
+		s_touch.momentumActive = false;
+		s_touch.velocityX = s_touch.velocityY = 0.0f;
+		return;
+	}
+	const float dt = 1.0f / 60.0f;
+	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
+	                   s_lastSyntheticX + s_touch.velocityX * dt,
+	                   s_lastSyntheticY + s_touch.velocityY * dt);
+	const float decay = SDL_max(0.0f, 1.0f - MOMENTUM_FRICTION_PER_SEC * dt);
+	s_touch.velocityX *= decay;
+	s_touch.velocityY *= decay;
 }
 
 void updateTouchLongPress(SDL3Mouse *mouse, SDL_Window *window)
@@ -905,6 +949,7 @@ void SDL3GameEngine::pollSDL3Events(void)
 		SDL3Mouse* touchMouse = dynamic_cast<SDL3Mouse*>(TheMouse);
 		if (touchMouse) {
 			updateTouchLongPress(touchMouse, m_SDLWindow);
+			updateTouchMomentum(touchMouse, m_SDLWindow);
 		}
 	}
 #endif
