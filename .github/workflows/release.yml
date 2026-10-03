@@ -2,6 +2,7 @@ name: Project | Release
 
 on:
   workflow_dispatch:
+
     inputs:
       release_version:
         description: "Release version tag (e.g., GeneralsX-Beta-3)"
