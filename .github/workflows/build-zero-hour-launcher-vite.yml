@@ -3,20 +3,6 @@ name: Legacy | Launcher | Vite
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-      - feature/vite-zero-hour-launcher
-    paths:
-      - 'launcher_vite/**'
-      - '.github/workflows/build-zero-hour-launcher-vite.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'launcher_vite/**'
-      - '.github/workflows/build-zero-hour-launcher-vite.yml'
-
 permissions:
   contents: read
 
