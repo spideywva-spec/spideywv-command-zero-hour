@@ -3,25 +3,6 @@ name: Legacy | iPad | Launcher Smoke
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - feature/vite-zero-hour-launcher
-    paths:
-      - 'GeneralsMD/Code/Main/IOSProfileLauncher.h'
-      - 'GeneralsMD/Code/Main/IOSProfileLauncher.mm'
-      - 'scripts/build/ios/launcher-smoke-main.mm'
-      - 'scripts/build/ios/build-launcher-smoke.sh'
-      - '.github/workflows/build-ios-launcher-smoke.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'GeneralsMD/Code/Main/IOSProfileLauncher.h'
-      - 'GeneralsMD/Code/Main/IOSProfileLauncher.mm'
-      - 'scripts/build/ios/launcher-smoke-main.mm'
-      - 'scripts/build/ios/build-launcher-smoke.sh'
-      - '.github/workflows/build-ios-launcher-smoke.yml'
-
 permissions:
   contents: read
 
