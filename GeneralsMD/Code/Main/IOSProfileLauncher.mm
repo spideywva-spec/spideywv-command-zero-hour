@@ -1167,6 +1167,40 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.fpsLimitSwitch = [[UISwitch alloc] init];
     [self.fpsLimitSwitch addTarget:self action:@selector(fpsLimitChanged:) forControlEvents:UIControlEventValueChanged];
 
+    // Every launcher setting is persisted immediately when the user changes it.
+    NSArray<UIControl *> *immediateSaveControls = @[
+        self.zeroHourControlBarSegment,
+        self.zeroHourCameosSegment,
+        self.zeroHourMusicSegment,
+        self.zeroHourVoicesSegment,
+        self.zeroHourHotkeysSegment,
+        self.zeroHourHotkeyLanguageSegment,
+        self.zeroHourPortraitsSegment,
+        self.zeroHourFogSwitch,
+        self.zeroHourWaterSwitch,
+        self.zeroHourExtraBuildingPropsSwitch,
+        self.shadow3DSwitch,
+        self.shadow2DSwitch,
+        self.cloudShadowsSwitch,
+        self.groundLightingSwitch,
+        self.softWaterSwitch,
+        self.buildingOcclusionSwitch,
+        self.showPropsSwitch,
+        self.extraAnimationsSwitch,
+        self.dynamicLODSwitch,
+        self.heatEffectsSwitch,
+        self.textureQualitySegment,
+        self.particleQualitySegment,
+        self.textureFilterSegment,
+        self.enforceMaxSwitch
+    ];
+    for (UIControl *control in immediateSaveControls)
+    {
+        [control addTarget:self
+                    action:@selector(settingsControlChanged:)
+          forControlEvents:UIControlEventValueChanged];
+    }
+
     UIStackView *controls = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self sectionLabel:@"ZERO HOUR"],
         [self segmentedRow:@"Панель управления" control:self.zeroHourControlBarSegment],
@@ -2528,6 +2562,15 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.scrollSpeedValue.text = [NSString stringWithFormat:@"%.1fx", self.scrollSpeedSlider.value];
     self.drawDistanceValue.text = [NSString stringWithFormat:@"%.2fx", self.drawDistanceSlider.value];
     self.fpsValue.text = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
+
+    // Sliders are persisted immediately as the user moves them.
+    [self saveНастройки];
+}
+
+- (void)settingsControlChanged:(id)sender
+{
+    (void)sender;
+    [self saveНастройки];
 }
 
 - (void)fpsLimitChanged:(UISwitch *)sender
@@ -2536,6 +2579,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.fpsSlider.enabled = enabled;
     self.fpsSlider.alpha = enabled ? 1.0 : 0.35;
     self.fpsValue.alpha = enabled ? 1.0 : 0.35;
+
+    // Persist the FPS toggle immediately, just like every other launcher setting.
+    [self saveНастройки];
 }
 
 @end
