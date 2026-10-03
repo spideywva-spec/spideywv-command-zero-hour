@@ -91,9 +91,8 @@ static void GXShowEscButton(void)
                 return;
             }
 
-            // Fade the visual layer to effectively 0% over 2 seconds.
-            // Keep UIView alpha at 1.0 because UIKit ignores views whose alpha
-            // is below 0.01 during hit-testing.
+            // Fade the visual layer from 100% to effectively 0%.
+            // UIView alpha stays at 1.0, so the invisible button remains hittable.
             [UIView animateWithDuration:2.0
                                   delay:0.0
                                 options:UIViewAnimationOptionBeginFromCurrentState |
@@ -113,34 +112,22 @@ static void GXShowEscButton(void)
 
 @implementation GXEscButton
 
-- (void)touchesBegan:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
+- (void)escTouchDown:(UIButton *)sender
 {
+    (void)sender;
     [self.layer removeAllAnimations];
     GXShowEscButton();
     self.layer.opacity = 0.65;
     GXPushEscapeEvent(true);
-    [super touchesBegan:touches withEvent:event];
 }
 
-- (void)touchesEnded:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
+- (void)escTouchUp:(UIButton *)sender
 {
+    (void)sender;
     [self.layer removeAllAnimations];
     GXShowEscButton();
     self.layer.opacity = 1.0;
     GXPushEscapeEvent(false);
-    [super touchesEnded:touches withEvent:event];
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches
-                withEvent:(UIEvent *)event
-{
-    [self.layer removeAllAnimations];
-    GXShowEscButton();
-    self.layer.opacity = 1.0;
-    GXPushEscapeEvent(false);
-    [super touchesCancelled:touches withEvent:event];
 }
 
 @end
@@ -176,6 +163,12 @@ static void GXAttachEscButtonToSDLWindow(void)
             [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
         button.accessibilityLabel = @"Escape";
         button.accessibilityTraits = UIAccessibilityTraitButton;
+        [button addTarget:button action:@selector(escTouchDown:)
+         forControlEvents:UIControlEventTouchDown];
+        [button addTarget:button action:@selector(escTouchUp:)
+         forControlEvents:UIControlEventTouchUpInside |
+                         UIControlEventTouchUpOutside |
+                         UIControlEventTouchCancel];
         button.autoresizingMask =
             UIViewAutoresizingFlexibleRightMargin |
             UIViewAutoresizingFlexibleBottomMargin;
