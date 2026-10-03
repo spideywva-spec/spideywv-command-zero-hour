@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-shell-${{ github.ref }}
+  group: macos-enhanced-dev-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
