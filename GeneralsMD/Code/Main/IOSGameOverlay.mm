@@ -9,6 +9,7 @@ static UIButton *s_escButton = nil;
 static SDL_Window *s_sdlWindow = nullptr;
 static SDL_WindowID s_windowID = 0;
 static id s_keyWindowObserver = nil;
+static BOOL s_escHasBeenUsed = NO;
 
 static UIWindow *GXFindSDLWindow(void)
 {
@@ -96,7 +97,8 @@ static void GXShowEscButton(void)
 
 static void GXFadeEscButtonAfterUse(void)
 {
-    if (s_escButton == nil) {
+    // ESC must remain fully visible until the player actually presses it.
+    if (s_escButton == nil || !s_escHasBeenUsed) {
         return;
     }
 
@@ -138,8 +140,9 @@ static void GXFadeEscButtonAfterUse(void)
 {
     (void)sender;
 
-    // A second press at the same ESC hit area cancels the fade and
-    // smoothly restores the button from 0% -> 100% visual opacity.
+    // A press is the only event allowed to start the ESC visibility cycle.
+    // This also guarantees there is no automatic fade while entering the game.
+    s_escHasBeenUsed = YES;
     GXShowEscButton();
 
     // Do not change alpha here: GXShowEscButton() is the visual 0% -> 100% reveal.
@@ -219,11 +222,11 @@ static void GXAttachEscButtonToSDLWindow(void)
 
     [hostWindow bringSubviewToFront:s_escButton];
 
-    // Only initialize visibility when the button is first attached.
-    // Re-attaching/retrying must not cancel an active 3-second fade.
-    if (s_escButton.alpha <= 0.001) {
-        s_escButton.alpha = 0.0;
-        s_escButton.layer.opacity = 0.0;
+    // Never initialize the button as transparent. Before the first real ESC
+    // press it must stay 100% visible; retries must not start a fade by themselves.
+    if (!s_escHasBeenUsed) {
+        s_escButton.alpha = 1.0;
+        s_escButton.layer.opacity = 1.0;
     }
 
     fprintf(stderr,
@@ -293,6 +296,7 @@ extern "C" void GeneralsXRemoveIOSEscOverlay(void)
 
         s_sdlWindow = nullptr;
         s_windowID = 0;
+        s_escHasBeenUsed = NO;
     });
 }
 
