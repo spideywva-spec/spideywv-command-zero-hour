@@ -4,30 +4,6 @@ name: Online | iPad | Build
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - feature/generals-online-apple
-    paths:
-      - 'GeneralsMD/**'
-      - '!GeneralsMD/Code/Main/IOSProfileLauncher.mm'
-      - '!GeneralsMD/Code/Main/IOSProfileLauncher.h'
-      - 'Core/**'
-      - 'Dependencies/Utility/**'
-      - 'resources/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'vcpkg.json'
-      - 'vcpkg-lock.json'
-      - 'Patches/dxvk-ios.patch'
-      - 'ios/**'
-      - '!ios/version.env'
-      - 'scripts/build/ios/package-shell.sh'
-      - 'scripts/build/ios/fetch-moltenvk.sh'
-      - 'scripts/build/ios/stage-fonts.sh'
-      - '.github/workflows/build-ios-online.yml'
-      - '.github/workflows/build-macos-online.yml'
-
 permissions:
   contents: read
 
