@@ -118,6 +118,22 @@ static void GXFadeEscButtonAfterUse(void)
 
 @implementation GXEscButton
 
+// UIKit normally stops hit-testing a view whose effective alpha is <= 0.01.
+// ESC must remain clickable even when its visual opacity has faded to 0%,
+// so bypass that alpha check and keep the same 50x50 touch target alive.
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+    if (self.hidden || !self.userInteractionEnabled) {
+        return nil;
+    }
+
+    if ([self pointInside:point withEvent:event]) {
+        return self;
+    }
+
+    return nil;
+}
+
 - (void)escTouchDown:(UIButton *)sender
 {
     (void)sender;
