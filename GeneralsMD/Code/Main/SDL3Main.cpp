@@ -1035,9 +1035,9 @@ int main(int argc, char* argv[])
 						std::error_code copyError;
 						std::filesystem::copy_file(sourcePath, destinationPath, copyError);
 						if (!copyError) {
-							fprintf(stderr, "INFO: iPad File Sharing imported %s (destination was missing)\\n", fileName);
+							fprintf(stderr, "INFO: iPad File Sharing imported %s (destination was missing)\n", fileName);
 						} else {
-							fprintf(stderr, "WARNING: failed to import Documents/%s: %s\\n",
+							fprintf(stderr, "WARNING: failed to import Documents/%s: %s\n",
 							        fileName, copyError.message().c_str());
 						}
 					};
