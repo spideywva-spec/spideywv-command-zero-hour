@@ -142,8 +142,8 @@ static void GXFadeEscButtonAfterUse(void)
     // smoothly restores the button from 0% -> 100% visual opacity.
     GXShowEscButton();
 
-    self.layer.opacity = 0.65;
-    self.alpha = 0.65;
+    // Do not change alpha here: GXShowEscButton() is the visual 0% -> 100% reveal.
+    // The touch target stays active throughout the animation.
     GXPushEscapeEvent(true);
 }
 
