@@ -75,6 +75,7 @@ static void GXShowEscButton(void)
     }
 
     ++s_escVisibilityGeneration;
+    s_escButton.layer.opacity = 1.0;
     s_escButton.alpha = 1.0;
     s_escButton.hidden = NO;
 
@@ -90,7 +91,8 @@ static void GXShowEscButton(void)
                 return;
             }
 
-            // Fade smoothly from 100% to 0% over 2 seconds.
+            // Fade the visual layer to 0% over 2 seconds, but keep the
+            // UIButton itself at alpha=1 so UIKit still hit-tests it when invisible.
             [UIView animateWithDuration:2.0
                                   delay:0.0
                                 options:UIViewAnimationOptionBeginFromCurrentState |
@@ -99,7 +101,7 @@ static void GXShowEscButton(void)
                              animations:^{
                 if (generation == s_escVisibilityGeneration &&
                     s_escButton != nil) {
-                    s_escButton.alpha = 0.0;
+                    s_escButton.layer.opacity = 0.0;
                 }
             } completion:nil];
         });
@@ -115,7 +117,7 @@ static void GXShowEscButton(void)
 {
     [self.layer removeAllAnimations];
     GXShowEscButton();
-    self.alpha = 0.65;
+    self.layer.opacity = 0.65;
     GXPushEscapeEvent(true);
     [super touchesBegan:touches withEvent:event];
 }
@@ -125,7 +127,7 @@ static void GXShowEscButton(void)
 {
     [self.layer removeAllAnimations];
     GXShowEscButton();
-    self.alpha = 1.0;
+    self.layer.opacity = 1.0;
     GXPushEscapeEvent(false);
     [super touchesEnded:touches withEvent:event];
 }
