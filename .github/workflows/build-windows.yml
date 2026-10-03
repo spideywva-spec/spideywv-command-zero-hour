@@ -17,22 +17,6 @@ on:
         type: string
         default: "windows64-deploy"
         description: "CMake preset for Windows"
-  workflow_dispatch:
-    inputs:
-      game:
-        type: choice
-        description: "Game to build"
-        options:
-          - GeneralsMD
-          - Generals
-        default: GeneralsMD
-      preset:
-        type: choice
-        description: "CMake preset for Windows"
-        options:
-          - windows64-deploy
-        default: windows64-deploy
-
 jobs:
   build-windows:
     name: ${{ inputs.game }}@${{ inputs.preset }}
