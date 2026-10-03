@@ -10,6 +10,7 @@ static SDL_Window *s_sdlWindow = nullptr;
 static SDL_WindowID s_windowID = 0;
 static id s_keyWindowObserver = nil;
 static BOOL s_escHasBeenUsed = NO;
+static BOOL s_escInitialFadeScheduled = NO;
 
 static UIWindow *GXFindSDLWindow(void)
 {
@@ -97,8 +98,7 @@ static void GXShowEscButton(void)
 
 static void GXFadeEscButtonAfterUse(void)
 {
-    // ESC must remain fully visible until the player actually presses it.
-    if (s_escButton == nil || !s_escHasBeenUsed) {
+    if (s_escButton == nil) {
         return;
     }
 
@@ -229,6 +229,21 @@ static void GXAttachEscButtonToSDLWindow(void)
         s_escButton.layer.opacity = 1.0;
     }
 
+    // Start the initial idle cycle exactly once per game session:
+    // ESC is fully visible for 3 seconds, then only its visual opacity
+    // fades from 100% to 0%. The button remains hit-testable at 0%.
+    if (!s_escInitialFadeScheduled) {
+        s_escInitialFadeScheduled = YES;
+
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                if (s_windowID != 0 && s_escButton != nil) {
+                    GXFadeEscButtonAfterUse();
+                }
+            });
+    }
+
     fprintf(stderr,
             "INFO: iOS in-game ESC overlay attached to SDL UIWindow at x=%.0f y=%.0f size=%.0fx%.0f\n",
             left, top, buttonSize, buttonSize);
@@ -297,6 +312,7 @@ extern "C" void GeneralsXRemoveIOSEscOverlay(void)
         s_sdlWindow = nullptr;
         s_windowID = 0;
         s_escHasBeenUsed = NO;
+        s_escInitialFadeScheduled = NO;
     });
 }
 
