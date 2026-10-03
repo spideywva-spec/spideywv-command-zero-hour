@@ -135,7 +135,7 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 // Two fingers:
 //   - short stationary slap => RMB click (cancel/right-click)
 //   - pinch => continuous mouse wheel
-//   - twist => MMB drag after a 40 degree dead-zone (camera rotation)
+//   - twist => MMB drag after a 60 degree dead-zone (camera rotation)
 //   - no accidental RMB while a pinch/twist is being classified
 namespace {
 
@@ -145,6 +145,7 @@ struct TouchState {
 		PENDING_ONE,
 		CAMERA_PAN,
 		SELECTION,
+		BUILD_PLACEMENT,
 		TWO_FINGER_GESTURE
 	};
 
@@ -193,6 +194,16 @@ constexpr float MOMENTUM_MAX_SPEED_PX_PER_SEC = 5000.0f;
 float s_lastSyntheticX = 0.0f;
 float s_lastSyntheticY = 0.0f;
 bool s_haveSyntheticPosition = false;
+
+static bool isBuildingPlacementMode(const SDL3Mouse *mouse)
+{
+	if (!mouse) {
+		return false;
+	}
+
+	const Mouse::MouseCursor cursor = mouse->getMouseCursor();
+	return cursor == Mouse::BUILD_PLACEMENT || cursor == Mouse::INVALID_BUILD_PLACEMENT;
+}
 
 static float normalizedAngleDelta(float a, float b)
 {
@@ -304,7 +315,12 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.velocityX = 0.0f;
 			s_touch.velocityY = 0.0f;
 			s_touch.lastMotionTicks = SDL_GetTicks();
-			s_touch.phase = TouchState::PENDING_ONE;
+			// When the game is already in building-placement mode, this finger
+			// controls the building preview. Never enter CAMERA_PAN here: the
+			// camera must remain completely locked while the preview moves.
+			s_touch.phase = isBuildingPlacementMode(mouse)
+				? TouchState::BUILD_PLACEMENT
+				: TouchState::PENDING_ONE;
 			s_touch.finger1 = event.tfinger.fingerID;
 			s_touch.downX = s_touch.lastX = px;
 			s_touch.downY = s_touch.lastY = py;
@@ -349,7 +365,13 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			break;
 		}
 
-		if (s_touch.phase == TouchState::PENDING_ONE &&
+		if (s_touch.phase == TouchState::BUILD_PLACEMENT &&
+		    event.tfinger.fingerID == s_touch.finger1) {
+			// Building preview follows the finger directly. Do NOT synthesize
+			// RMB, because RMB is the camera-drag path in Generals.
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
+		}
+		else if (s_touch.phase == TouchState::PENDING_ONE &&
 		    event.tfinger.fingerID == s_touch.finger1) {
 			const float dx = px - s_touch.downX;
 			const float dy = py - s_touch.downY;
@@ -481,6 +503,18 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		}
 
 		if (!firstUp) {
+			break;
+		}
+
+		if (s_touch.phase == TouchState::BUILD_PLACEMENT) {
+			// Release freezes the current preview position. Do not send a mouse
+			// button event: construction is intentionally a separate second tap.
+			if (event.type == SDL_EVENT_FINGER_UP) {
+				s_touch.lastTapTicks = SDL_GetTicks();
+				s_touch.lastTapX = s_touch.downX;
+				s_touch.lastTapY = s_touch.downY;
+			}
+			s_touch.phase = TouchState::IDLE;
 			break;
 		}
 
