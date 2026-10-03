@@ -3,23 +3,6 @@ name: Online | macOS | Build
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - feature/generals-online-apple
-    paths:
-      - 'GeneralsMD/**'
-      - 'Core/**'
-      - 'Dependencies/Utility/**'
-      - 'resources/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'vcpkg.json'
-      - 'vcpkg-lock.json'
-      - 'references/fbraz3-dxvk'
-      - 'scripts/build/macos/**'
-      - '.github/workflows/build-macos-online.yml'
-
 permissions:
   contents: read
 
