@@ -2,6 +2,7 @@ name: Legacy | Launcher | Vite
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
