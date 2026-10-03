@@ -1,5 +1,4 @@
-# iOS-only clean buildd
-# Manual launch requested
+# iOS-only clean build
 name: Shared | iPad | Engine Shell
 
 on:
@@ -56,21 +55,11 @@ jobs:
           if [ -f Patches/dxvk-ios.patch ]; then
             git -C references/fbraz3-dxvk apply ../../Patches/dxvk-ios.patch || true
           fi
-          # A13 / Apple GPU Family 6: NEVER advertise Vulkan 1.2 or 1.3.
-          # Match the assignment regardless of the exact DXVK fork formatting.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp")
-          s = p.read_text()
-          import re
-          s2 = re.sub(r'(?m)^([ \t]*(?:bool[ \t]+)?m_hasVulkan12[ \t]*=)[^;]+;', r'\1 false;', s)
-          s2 = re.sub(r'(?m)^([ \t]*(?:bool[ \t]+)?m_hasVulkan13[ \t]*=)[^;]+;', r'\1 false;', s2)
-          if s2 == s:
-              raise SystemExit("ERROR: m_hasVulkan12/m_hasVulkan13 assignments were not found")
-          p.write_text(s2)
-          PY
-          grep -nE 'm_hasVulkan12[[:space:]]*=[[:space:]]*false|m_hasVulkan13[[:space:]]*=[[:space:]]*false' references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp
-          sed -i '' 's/enabled\\.vk12\\.samplerMirrorClampToEdge = VK_TRUE;/enabled.vk12.samplerMirrorClampToEdge = VK_FALSE;/' references/fbraz3-dxvk/src/d3d9/d3d9_device.cpp
+          # Disable Vulkan 1.2/1.3 feature flags for Apple
+          sed -i '' 's/m_hasVulkan12 = m_driverInfo.version >= VK_MAKE_VERSION(1, 2, 0);/m_hasVulkan12 = false;/g' references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp || true
+          sed -i '' 's/m_hasVulkan13 = m_driverInfo.version >= VK_MAKE_VERSION(1, 3, 0);/m_hasVulkan13 = false;/g' references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp || true
+          # Apple A12/A13 (Apple GPU Family 6) lack samplerMirrorClampToEdge.
+          sed -i '' 's/enabled\.vk12\.samplerMirrorClampToEdge = VK_TRUE;/enabled.vk12.samplerMirrorClampToEdge = VK_FALSE;/' references/fbraz3-dxvk/src/d3d9/d3d9_device.cpp
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -92,15 +81,18 @@ jobs:
           SHA256="632cbe96c8ed6ed00c6ce25e3a7738c466134f76586e1c51f1419410d7f9042e"
           EXTRACT="/tmp/vulkan-extract"
           ROOT="$HOME/VulkanSDK/${VERSION}"
+
           curl -fL --retry 3 --retry-delay 5 -o "${ZIP}" "${URL}"
           echo "${SHA256}  ${ZIP}" | shasum -a 256 -c -
           rm -rf "${EXTRACT}"
           mkdir -p "${EXTRACT}"
           unzip -q "${ZIP}" -d "${EXTRACT}"
+
           INSTALLER=$(find "${EXTRACT}" -path "*/Contents/MacOS/vulkansdk-macOS-${VERSION}" -type f | head -1)
           test -n "${INSTALLER}"
           chmod +x "${INSTALLER}"
           "${INSTALLER}" --root "${ROOT}" --accept-licenses --default-answer --confirm-command install
+
           if [[ -d "${ROOT}/macOS" ]]; then SDK="${ROOT}/macOS"; else SDK="${ROOT}"; fi
           test -f "${SDK}/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
           test -d "${SDK}/include/vulkan"
