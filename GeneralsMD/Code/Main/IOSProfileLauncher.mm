@@ -2208,8 +2208,10 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
 }
 - (void)saveНастройки
 {
-    // Save both settings files atomically. Keep all file I/O on the UI action,
-    // but never terminate the launcher if a write fails.
+    // Single save path for launcher settings:
+    // - ZeroHourSettings.ini stays the separate launcher/profile file.
+    // - Options.ini is the live engine settings file.
+    // - iOSIPadOverrides.ini remains the engine-specific camera/FPS bridge.
     EnsureGameRootDirectory();
 
     NSString *iosOverrides =
@@ -2283,20 +2285,47 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSError *zeroHourError = nil;
     BOOL zeroHourOK = WriteKeyValueFile(ZeroHourSettingsPath(), zeroHourValues, &zeroHourError);
 
-    // Options.ini is the file actually consumed by OptionPreferences at game startup.
-    // Keep existing engine options and replace only values controlled by this launcher.
-    NSMutableDictionary<NSString *, NSString *> *gameOptions = ReadKeyValueFile(GameOptionsPath());
-    gameOptions[@"TextureReduction"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
-    gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"yes" : @"no";
-    gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"yes" : @"no";
+    // Seed every key controlled by this launcher before reading the existing file.
+    // Thus missing/empty/old Options.ini can never suppress a launcher setting.
+    NSMutableDictionary<NSString *, NSString *> *gameOptions = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"UseShadowVolumes": @"No",
+        @"UseShadowDecals": @"Yes",
+        @"UseCloudMap": @"No",
+        @"UseLightMap": @"Yes",
+        @"FogEffects": @"No",
+        @"ShowSoftWaterEdge": @"Yes",
+        @"ShowTrees": @"Yes",
+        @"ExtraAnimations": @"Yes",
+        @"DynamicLOD": @"No",
+        @"HeatEffects": @"No",
+        @"TextureReduction": @"0",
+        @"MaxParticleCount": @"2500",
+        @"TextureFilter": @"Anisotropic",
+        @"AnisotropyLevel": @"8",
+        @"FPSLimit": @"yes",
+        @"MaxCameraHeight": @"550.0",
+        @"MinCameraHeight": @"70.0",
+        @"CameraPitch": @"37.0",
+        @"TerrainDrawDistanceScale": @"1.20",
+        @"ScrollFactor": @"100"
+    }];
+
+    // Preserve unrelated engine options only. Every launcher-controlled key is
+    // overwritten below with the current UI value, so stale Options.ini values
+    // cannot win over the launcher.
+    [gameOptions addEntriesFromDictionary:ReadKeyValueFile(GameOptionsPath())];
+
     gameOptions[@"UseShadowVolumes"] = self.shadow3DSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseShadowDecals"] = self.shadow2DSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseCloudMap"] = self.cloudShadowsSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseLightMap"] = self.groundLightingSwitch.on ? @"yes" : @"no";
+    gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"yes" : @"no";
     gameOptions[@"ShowSoftWaterEdge"] = self.softWaterSwitch.on ? @"yes" : @"no";
     gameOptions[@"ShowTrees"] = self.showPropsSwitch.on ? @"yes" : @"no";
     gameOptions[@"ExtraAnimations"] = self.extraAnimationsSwitch.on ? @"yes" : @"no";
-    gameOptions[@"BuildingOcclusion"] = self.buildingOcclusionSwitch.on ? @"yes" : @"no";
+    gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"yes" : @"no";
+    gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"yes" : @"no";
+    gameOptions[@"TextureReduction"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
     gameOptions[@"MaxParticleCount"] = [NSString stringWithFormat:@"%ld", (long)particleCount];
     gameOptions[@"TextureFilter"] = textureFilter;
     gameOptions[@"AnisotropyLevel"] = @"8";
@@ -2311,8 +2340,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSString *liveOptionsPath = GameOptionsPath();
     BOOL optionsOK = WriteKeyValueFile(liveOptionsPath, gameOptions, &optionsError);
 
-    // Keep the same Options.ini visible in the iOS Files app.
-    // The engine still reads the live copy from Library/Application Support.
+    // Keep the same Options.ini content available in Documents/Files.
     NSError *documentsOptionsError = nil;
     BOOL documentsOptionsOK = WriteKeyValueFile(DocumentsOptionsPath(), gameOptions, &documentsOptionsError);
 
@@ -2326,9 +2354,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
 
     if (iosOK && zeroHourOK && optionsOK && documentsOptionsOK)
     {
-        self.settingsStatus.text = @"✓ Настройки сохранены. Изменения применятся при следующем запуске игры.";
+        self.settingsStatus.text = @"✓ Настройки сохранены. ZeroHourSettings.ini + Options.ini синхронизированы.";
         self.settingsStatus.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.48 alpha:1.0];
-        fprintf(stderr, "INFO: iOS launcher settings saved successfully\n");
+        fprintf(stderr, "INFO: iOS launcher settings saved successfully; ZeroHourSettings.ini and Options.ini synchronized\n");
     }
     else
     {
