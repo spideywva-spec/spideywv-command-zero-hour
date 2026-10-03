@@ -64,6 +64,17 @@ mkdir -p "${OUT_DIR}"
 cp -R "${SHELL_APP}" "${OUT_DIR}/"
 APP="${OUT_DIR}/${APP_NAME}.app"
 
+# Embed the launcher intro video directly into the final app bundle.
+# IOSProfileLauncher.mm resolves it through [NSBundle mainBundle].
+INTRO_VIDEO="${PROJECT_ROOT}/resources/intro.mp4"
+test -f "${INTRO_VIDEO}" || {
+  echo "ERROR: missing launcher video: ${INTRO_VIDEO}"
+  exit 1
+}
+cp "${INTRO_VIDEO}" "${APP}/intro.mp4"
+echo "OK: embedded launcher video: ${APP}/intro.mp4"
+
+
 PLIST="${APP}/Info.plist"
 if [[ -f "${PLIST}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${PROJECT_VERSION}" "${PLIST}"
