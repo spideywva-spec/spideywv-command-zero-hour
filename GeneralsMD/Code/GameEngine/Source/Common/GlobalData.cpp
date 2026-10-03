@@ -1240,6 +1240,33 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	TheWritableGlobalData->m_textureFilteringMode = optionPref.getTextureFilterMode();
 	TheWritableGlobalData->m_textureAnisotropyLevel = optionPref.getTextureAnisotropyLevel();
 
+	// GeneralsX: apply launcher Options.ini graphics preferences directly to the
+	// live GlobalData state used by the renderer. This keeps the iOS launcher
+	// settings authoritative instead of leaving some values only in the
+	// OptionPreferences map.
+	TheWritableGlobalData->m_useTrees = optionPref.getTreesEnabled();
+	TheWritableGlobalData->m_useCloudMap = optionPref.getCloudShadowsEnabled();
+	TheWritableGlobalData->m_useLightMap = optionPref.getLightmapEnabled();
+	TheWritableGlobalData->m_showSoftWaterEdge = optionPref.getSmoothWaterEnabled();
+	TheWritableGlobalData->m_useDrawModuleLOD = optionPref.getExtraAnimationsDisabled();
+	TheWritableGlobalData->m_useHeatEffects = optionPref.getUseHeatEffects();
+	TheWritableGlobalData->m_enableDynamicLOD = optionPref.getDynamicLODEnabled();
+	TheWritableGlobalData->m_useShadowVolumes = optionPref.get3DShadowsEnabled();
+	TheWritableGlobalData->m_useShadowDecals = optionPref.get2DShadowsEnabled();
+	TheWritableGlobalData->m_enableBehindBuildingMarkers = optionPref.getBuildingOcclusionEnabled();
+	TheWritableGlobalData->m_maxParticleCount = optionPref.getParticleCap();
+	TheWritableGlobalData->m_textureReductionFactor = optionPref.getTextureReduction();
+
+	// Camera and FPS settings are also selected by the iOS launcher and must
+	// reach the live engine state before the first game frame.
+	TheWritableGlobalData->m_maxCameraHeight = optionPref.getMaxCameraHeight();
+	TheWritableGlobalData->m_minCameraHeight = optionPref.getMinCameraHeight();
+	TheWritableGlobalData->m_cameraPitch = optionPref.getCameraPitch();
+	TheWritableGlobalData->m_terrainDrawDistanceScale = optionPref.getTerrainDrawDistanceScale();
+	TheWritableGlobalData->m_useFpsLimit = optionPref.getFPSLimitEnabled();
+	TheWritableGlobalData->m_framesPerSecondLimit = optionPref.getInt("FramesPerSecondLimit", 60);
+
+
 	Int val=optionPref.getGammaValue();
 	//generate a value between 0.6 and 2.0.
 	if (val < 50)
