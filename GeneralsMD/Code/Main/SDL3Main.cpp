@@ -1022,29 +1022,28 @@ int main(int argc, char* argv[])
 					char docsDir[1024];
 					snprintf(docsDir, sizeof(docsDir), "%s/Documents", home);
 
-					auto syncEditableConfig = [&](const char *fileName) {
+					auto syncEditableConfigIfMissing = [&](const char *fileName) {
 						char sourcePath[1024], destinationPath[1024];
 						snprintf(sourcePath, sizeof(sourcePath), "%s/%s", docsDir, fileName);
 						snprintf(destinationPath, sizeof(destinationPath), "%s/%s", userDataDir, fileName);
 
-						if (access(sourcePath, R_OK) == 0) {
-							std::error_code copyError;
-							std::filesystem::copy_file(
-								sourcePath,
-								destinationPath,
-								std::filesystem::copy_options::overwrite_existing,
-								copyError);
-							if (!copyError) {
-								fprintf(stderr, "INFO: iPad File Sharing applied %s\n", fileName);
-							} else {
-								fprintf(stderr, "WARNING: failed to apply Documents/%s: %s\n",
-								        fileName, copyError.message().c_str());
-							}
+						// Documents is an import location only. Never overwrite a
+						// launcher-saved file in Library/Application Support.
+						if (access(sourcePath, R_OK) != 0 || access(destinationPath, F_OK) == 0)
+							return;
+
+						std::error_code copyError;
+						std::filesystem::copy_file(sourcePath, destinationPath, copyError);
+						if (!copyError) {
+							fprintf(stderr, "INFO: iPad File Sharing imported %s (destination was missing)\\n", fileName);
+						} else {
+							fprintf(stderr, "WARNING: failed to import Documents/%s: %s\\n",
+							        fileName, copyError.message().c_str());
 						}
 					};
 
-					syncEditableConfig("Options.ini");
-					syncEditableConfig("SagePatch.ini");
+					syncEditableConfigIfMissing("Options.ini");
+					syncEditableConfigIfMissing("SagePatch.ini");
 				}
 
 				if (access(optionsPath, F_OK) != 0 && access("DefaultOptions.ini", R_OK) == 0) {
