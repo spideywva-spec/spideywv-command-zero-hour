@@ -2,6 +2,7 @@ name: Online | macOS | Build
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - feature/generals-online-apple
