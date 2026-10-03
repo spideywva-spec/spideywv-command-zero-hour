@@ -74,37 +74,12 @@ static void GXShowEscButton(void)
         return;
     }
 
-    ++s_escVisibilityGeneration;
+    // ESC must remain permanently visible and hittable.
+    // Do not fade it out or change alpha/opacity after a timer.
+    [s_escButton.layer removeAllAnimations];
     s_escButton.layer.opacity = 1.0;
     s_escButton.alpha = 1.0;
     s_escButton.hidden = NO;
-
-    const NSUInteger generation = s_escVisibilityGeneration;
-
-    // Stay fully visible for about 3 seconds after the last ESC interaction.
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-            if (s_escButton == nil ||
-                generation != s_escVisibilityGeneration ||
-                s_windowID == 0) {
-                return;
-            }
-
-            // Fade the visual layer from 100% to effectively 0%.
-            // UIView alpha stays at 1.0, so the invisible button remains hittable.
-            [UIView animateWithDuration:2.0
-                                  delay:0.0
-                                options:UIViewAnimationOptionBeginFromCurrentState |
-                                        UIViewAnimationOptionAllowUserInteraction |
-                                        UIViewAnimationOptionCurveEaseInOut
-                             animations:^{
-                if (generation == s_escVisibilityGeneration &&
-                    s_escButton != nil) {
-                    s_escButton.layer.opacity = 0.001;
-                }
-            } completion:nil];
-        });
 }
 
 @interface GXEscButton : UIButton
