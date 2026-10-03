@@ -2,6 +2,7 @@ name: Legacy | iPad | Launcher Smoke
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - feature/vite-zero-hour-launcher
