@@ -3,39 +3,6 @@ name: Legacy | iPad | Launcher Shell
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - feature/vite-zero-hour-launcher
-    paths:
-      - 'GeneralsMD/**'
-      - 'Core/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'Patches/dxvk-ios.patch'
-      - 'ios/**'
-      - 'launcher_vite/**'
-      - 'scripts/build/ios/package-ios-zh.sh'
-      - 'scripts/build/ios/fetch-moltenvk.sh'
-      - 'scripts/build/ios/stage-fonts.sh'
-      - '.github/workflows/build-ios-launcher-shell.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'GeneralsMD/**'
-      - 'Core/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'Patches/dxvk-ios.patch'
-      - 'ios/**'
-      - 'launcher_vite/**'
-      - 'scripts/build/ios/package-ios-zh.sh'
-      - 'scripts/build/ios/fetch-moltenvk.sh'
-      - 'scripts/build/ios/stage-fonts.sh'
-      - '.github/workflows/build-ios-launcher-shell.yml'
-
 permissions:
   contents: read
 
