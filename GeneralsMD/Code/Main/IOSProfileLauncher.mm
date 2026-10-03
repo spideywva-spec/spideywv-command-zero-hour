@@ -219,17 +219,9 @@ NSString *ZeroHourSettingsPath()
 
 NSString *GameOptionsPath()
 {
-    // OptionPreferences -> GlobalData::getPath_UserData() uses
-    // Library/Application Support/GeneralsX/GeneralsZH on Apple/iOS.
-    // Documents/Options.ini is only the install/launcher directory and is NOT
-    // the file consumed by the engine.
-    NSString *dir = [NSHomeDirectory()
-        stringByAppendingPathComponent:@"Library/Application Support/GeneralsX/GeneralsZH"];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir
-                              withIntermediateDirectories:YES
-                                               attributes:nil
-                                                    error:nil];
-    return [dir stringByAppendingPathComponent:@"Options.ini"];
+    // This must be byte-for-byte the same logical path used by the engine.
+    // Both sides use $HOME/Library/Application Support/GeneralsX/GeneralsZH/Options.ini.
+    return EngineOptionsPath();
 }
 
 NSString *EngineOptionsPath()
