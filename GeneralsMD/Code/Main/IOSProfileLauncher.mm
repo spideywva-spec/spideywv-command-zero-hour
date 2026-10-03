@@ -221,9 +221,16 @@ NSString *EngineOptionsPath();
 
 NSString *GameOptionsPath()
 {
-    // This must be byte-for-byte the same logical path used by the engine.
-    // Both sides use $HOME/Library/Application Support/GeneralsX/GeneralsZH/Options.ini.
+    // This is the live Options.ini consumed by the engine.
+    // $HOME/Library/Application Support/GeneralsX/GeneralsZH/Options.ini
     return EngineOptionsPath();
+}
+
+NSString *DocumentsOptionsPath()
+{
+    // Documents is the user-visible Files-app mirror of the live Options.ini.
+    NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    return [documents stringByAppendingPathComponent:@"Options.ini"];
 }
 
 NSString *EngineOptionsPath()
@@ -2301,9 +2308,23 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(self.scrollSpeedSlider.value * 100.0f)];
 
     NSError *optionsError = nil;
-    BOOL optionsOK = WriteKeyValueFile(GameOptionsPath(), gameOptions, &optionsError);
+    NSString *liveOptionsPath = GameOptionsPath();
+    BOOL optionsOK = WriteKeyValueFile(liveOptionsPath, gameOptions, &optionsError);
 
-    if (iosOK && zeroHourOK && optionsOK)
+    // Keep the same Options.ini visible in the iOS Files app.
+    // The engine still reads the live copy from Library/Application Support.
+    NSError *documentsOptionsError = nil;
+    BOOL documentsOptionsOK = WriteKeyValueFile(DocumentsOptionsPath(), gameOptions, &documentsOptionsError);
+
+    if (optionsOK && documentsOptionsOK)
+    {
+        fprintf(stderr, "INFO: iOS launcher Options.ini saved: %s\n",
+                liveOptionsPath.fileSystemRepresentation);
+        fprintf(stderr, "INFO: iOS launcher Options.ini mirror saved: %s\n",
+                DocumentsOptionsPath().fileSystemRepresentation);
+    }
+
+    if (iosOK && zeroHourOK && optionsOK && documentsOptionsOK)
     {
         self.settingsStatus.text = @"✓ Настройки сохранены. Изменения применятся при следующем запуске игры.";
         self.settingsStatus.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.48 alpha:1.0];
@@ -2311,7 +2332,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     }
     else
     {
-        NSError *error = iosError != nil ? iosError : (zeroHourError != nil ? zeroHourError : optionsError);
+        NSError *error = iosError != nil ? iosError :
+                        (zeroHourError != nil ? zeroHourError :
+                        (optionsError != nil ? optionsError : documentsOptionsError));
         self.settingsStatus.text = [NSString stringWithFormat:@"✕ Не удалось сохранить настройки: %@",
                                     error.localizedDescription ?: @"неизвестная ошибка"];
         self.settingsStatus.textColor = [UIColor colorWithRed:1.0 green:0.42 blue:0.32 alpha:1.0];
