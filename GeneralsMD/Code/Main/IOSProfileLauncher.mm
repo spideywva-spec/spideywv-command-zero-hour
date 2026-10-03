@@ -292,12 +292,32 @@ BOOL SettingBoolValue(NSDictionary<NSString *, NSString *> *values,
 
 BOOL WriteKeyValueFile(NSString *path, NSDictionary<NSString *, NSString *> *values, NSError **error)
 {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *directory = [path stringByDeletingLastPathComponent];
+
+    if (![fm createDirectoryAtPath:directory
+       withIntermediateDirectories:YES
+                        attributes:nil
+                             error:error])
+        return NO;
+
     NSArray<NSString *> *keys =
         [[values allKeys] sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
     NSMutableString *output = [NSMutableString string];
     for (NSString *key in keys)
         [output appendFormat:@"%@ = %@\n", key, values[key]];
-    return [output writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:error];
+
+    if (![output writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:error])
+        return NO;
+
+    // Verify the exact file that the engine will read exists and is readable.
+    NSString *verify = [NSString stringWithContentsOfFile:path
+                                                  encoding:NSUTF8StringEncoding
+                                                     error:error];
+    if (verify == nil)
+        return NO;
+
+    return YES;
 }
 
 NSDictionary<NSString *, NSString *> *DefaultZeroHourSettings()
