@@ -11,16 +11,6 @@ on:
         required: false
         type: string
         default: linux64-deploy
-  workflow_dispatch:
-    inputs:
-      preset:
-        type: choice
-        description: "CMake preset for Linux"
-        options:
-          - linux64-deploy
-          - linux64-testing
-        default: linux64-deploy
-
 jobs:
   build-linux-flatpak:
     name: ${{ matrix.game.id }}@${{ inputs.preset }}
