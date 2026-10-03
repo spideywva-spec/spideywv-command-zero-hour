@@ -13,15 +13,6 @@ on:
         type: string
         default: "macos-vulkan"
         description: "CMake preset for macOS"
-  workflow_dispatch:
-    inputs:
-      preset:
-        type: choice
-        description: "CMake preset for macOS"
-        options:
-          - macos-vulkan
-        default: macos-vulkan
-
 jobs:
   build-mac-app:
     name: ${{ matrix.game.id }}@${{ inputs.preset }}
