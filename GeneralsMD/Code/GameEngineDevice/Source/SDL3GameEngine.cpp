@@ -184,7 +184,7 @@ constexpr Uint64 DOUBLE_TAP_MS = 350;
 constexpr float DOUBLE_TAP_DISTANCE_PX = 32.0f;
 constexpr float TOUCH_MOVE_EPSILON_PX = 3.0f;
 constexpr float TWO_FINGER_SLOP_PX = 10.0f;
-constexpr float ROTATION_THRESHOLD_DEGREES = 40.0f;
+constexpr float ROTATION_THRESHOLD_DEGREES = 60.0f;
 constexpr float PINCH_WHEEL_SCALE = 0.035f;
 constexpr float MOMENTUM_STOP_SPEED_PX_PER_SEC = 8.0f;
 constexpr float MOMENTUM_FRICTION_PER_SEC = 5.5f;
@@ -433,7 +433,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			if (s_touch.rotationActive) {
 				// Convert angular motion into a smooth horizontal cursor delta.
 				// No snapping: every motion event is passed through.
-				const float rotationPixels = deltaAngle * (180.0f / 3.14159265358979323846f) * 6.0f;
+				const float rotationPixels = deltaAngle * (180.0f / 3.14159265358979323846f) * 1.75f;
 				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
 				                   s_touch.gestureCenterX + rotationPixels, cy);
 				s_touch.gestureCenterX += rotationPixels;
