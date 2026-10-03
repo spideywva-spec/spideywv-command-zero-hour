@@ -234,7 +234,14 @@ NSString *GameOptionsPath()
 
 NSString *EngineOptionsPath()
 {
-    NSString *dir = [NSHomeDirectory()
+    // Mirror GlobalData::BuildUserDataPathFromRegistry() exactly on Apple:
+    // $HOME/Library/Application Support/GeneralsX/GeneralsZH/.
+    const char *home = getenv("HOME");
+    NSString *homePath = home != nullptr
+        ? [NSString stringWithUTF8String:home]
+        : NSHomeDirectory();
+
+    NSString *dir = [homePath
         stringByAppendingPathComponent:@"Library/Application Support/GeneralsX/GeneralsZH"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES
