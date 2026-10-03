@@ -18,23 +18,6 @@ on:
         type: string
         default: "gzip"
         description: "Artifact packaging format: gzip or appimage"
-  workflow_dispatch:
-    inputs:
-      preset:
-        type: choice
-        description: "CMake preset for Linux"
-        options:
-          - linux64-deploy
-          - linux64-testing
-        default: linux64-deploy
-      package_format:
-        type: choice
-        description: "Artifact packaging format"
-        options:
-          - gzip
-          - appimage
-        default: gzip
-
 jobs:
   build-linux:
     name: ${{ matrix.game.id }}@${{ inputs.preset }}
