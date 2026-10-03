@@ -82,6 +82,16 @@ target_sources(z_generals PRIVATE
 # Keep launcher UI in its own dylib: launcher-only changes can then be rebuilt and
 # repackaged without recompiling the whole GeneralsX engine.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # In-game UIKit ESC overlay. This is compiled into the actual game binary,
+    # separate from the native launcher dylib.
+    target_sources(z_generals PRIVATE
+        IOSGameOverlay.h
+        IOSGameOverlay.mm
+    )
+    set_source_files_properties(IOSGameOverlay.mm PROPERTIES
+        SKIP_PRECOMPILE_HEADERS ON
+        COMPILE_OPTIONS "-fobjc-arc"
+    )
     set(GX_PROJECT_VERSION "0.0.0")
     set(GX_ENGINE_VERSION "0.0.0")
     set(GX_LAUNCHER_VERSION "0.0.0")
@@ -111,6 +121,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_library(generalsx_ios_launcher SHARED
         IOSProfileLauncher.h
         IOSProfileLauncher.mm
+        IOSGameFileManager.h
+        IOSGameFileManager.mm
     )
     set_target_properties(generalsx_ios_launcher PROPERTIES
         OUTPUT_NAME "GeneralsXLauncher"
@@ -132,10 +144,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # dependencies explicitly instead of inheriting them from other targets.
     find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
     find_library(UIKIT_FRAMEWORK UIKit REQUIRED)
+    find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
+    find_library(AVFOUNDATION_FRAMEWORK AVFoundation REQUIRED)
+    find_library(COREMEDIA_FRAMEWORK CoreMedia REQUIRED)
     find_library(OBJC_LIBRARY objc REQUIRED)
+    find_library(ZLIB_LIBRARY z REQUIRED)
     target_link_libraries(generalsx_ios_launcher PRIVATE
         ${FOUNDATION_FRAMEWORK}
         ${UIKIT_FRAMEWORK}
+        ${QUARTZCORE_FRAMEWORK}
+        ${AVFOUNDATION_FRAMEWORK}
+        ${COREMEDIA_FRAMEWORK}
+        ${OBJC_LIBRARY}
+        ${ZLIB_LIBRARY}
+    )
+    # The ESC overlay is compiled into z_generals itself, so its UIKit symbols
+    # must also be linked into the game executable (not only the launcher dylib).
+    target_link_libraries(z_generals PRIVATE
+        ${UIKIT_FRAMEWORK}
+        ${QUARTZCORE_FRAMEWORK}
         ${OBJC_LIBRARY}
     )
     target_compile_definitions(generalsx_ios_launcher PRIVATE
