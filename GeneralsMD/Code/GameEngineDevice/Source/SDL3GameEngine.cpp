@@ -354,10 +354,11 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 
 	case SDL_EVENT_FINGER_MOTION:
 		if (event.tfinger.fingerID == s_touch.finger1) {
+			// Keep the previous position until velocity is calculated below.
+			// Updating lastX/lastY first makes (current - last) equal zero and
+			// destroys the real finger velocity used for smooth camera momentum.
 			s_touch.f1x = event.tfinger.x;
 			s_touch.f1y = event.tfinger.y;
-			s_touch.lastX = px;
-			s_touch.lastY = py;
 		} else if (event.tfinger.fingerID == s_touch.finger2) {
 			s_touch.f2x = event.tfinger.x;
 			s_touch.f2y = event.tfinger.y;
@@ -380,9 +381,13 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			if (moved >= TOUCH_MOVE_EPSILON_PX) {
 				const Uint64 nowTicks = SDL_GetTicks();
 				const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
-				s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (px - s_touch.lastX) / dt));
-				s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (py - s_touch.lastY) / dt));
+				const float deltaX = px - s_touch.lastX;
+				const float deltaY = py - s_touch.lastY;
+				s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaX / dt));
+				s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaY / dt));
 				s_touch.lastMotionTicks = nowTicks;
+				s_touch.lastX = px;
+				s_touch.lastY = py;
 				const bool selectionArmed =
 					(SDL_GetTicks() - s_touch.downTicks) >= SELECTION_HOLD_MS;
 				if (selectionArmed) {
@@ -404,9 +409,13 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		         event.tfinger.fingerID == s_touch.finger1) {
 			const Uint64 nowTicks = SDL_GetTicks();
 			const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
-			s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (px - s_touch.lastX) / dt));
-			s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, (py - s_touch.lastY) / dt));
+			const float deltaX = px - s_touch.lastX;
+			const float deltaY = py - s_touch.lastY;
+			s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaX / dt));
+			s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaY / dt));
 			s_touch.lastMotionTicks = nowTicks;
+			s_touch.lastX = px;
+			s_touch.lastY = py;
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
 		}
 		else if (s_touch.phase == TouchState::SELECTION &&
@@ -573,11 +582,19 @@ void updateTouchMomentum(SDL3Mouse *mouse, SDL_Window *window)
 		s_touch.velocityX = s_touch.velocityY = 0.0f;
 		return;
 	}
-	const float dt = 1.0f / 60.0f;
+	// Use the actual time since the previous momentum update. A fixed
+	// 1/60 timestep makes motion visibly uneven whenever iOS delivers frames
+	// faster/slower than 60 Hz.
+	const Uint64 nowTicks = SDL_GetTicks();
+	const float dt = SDL_min(0.05f, SDL_max(0.001f,
+		(float)(nowTicks - s_touch.lastMotionTicks) * 0.001f));
+	s_touch.lastMotionTicks = nowTicks;
+
 	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
 	                   s_lastSyntheticX + s_touch.velocityX * dt,
 	                   s_lastSyntheticY + s_touch.velocityY * dt);
-	const float decay = SDL_max(0.0f, 1.0f - MOMENTUM_FRICTION_PER_SEC * dt);
+	// Frame-rate independent exponential friction.
+	const float decay = SDL_exp(-MOMENTUM_FRICTION_PER_SEC * dt);
 	s_touch.velocityX *= decay;
 	s_touch.velocityY *= decay;
 }
