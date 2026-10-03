@@ -9,8 +9,8 @@ static UIButton *s_escButton = nil;
 static SDL_Window *s_sdlWindow = nullptr;
 static SDL_WindowID s_windowID = 0;
 static id s_keyWindowObserver = nil;
-static BOOL s_escHasBeenUsed = NO;
 static BOOL s_escInitialFadeScheduled = NO;
+static NSUInteger s_escFadeGeneration = 0;
 
 static UIWindow *GXFindSDLWindow(void)
 {
@@ -140,9 +140,9 @@ static void GXFadeEscButtonAfterUse(void)
 {
     (void)sender;
 
-    // A press is the only event allowed to start the ESC visibility cycle.
-    // This also guarantees there is no automatic fade while entering the game.
-    s_escHasBeenUsed = YES;
+    // Any real ESC press cancels the initial idle-fade timer and
+    // starts the required 0% -> 100% visual reveal.
+    ++s_escFadeGeneration;
     GXShowEscButton();
 
     // Do not change alpha here: GXShowEscButton() is the visual 0% -> 100% reveal.
@@ -158,8 +158,8 @@ static void GXFadeEscButtonAfterUse(void)
     self.alpha = 1.0;
     GXPushEscapeEvent(false);
 
-    // After ESC is used, fade only the visual appearance 100% -> 0%
-    // over exactly 3 seconds. The hit target remains active.
+    // After every real ESC use, fade only the visual appearance
+    // 100% -> 0% over exactly 3 seconds. The hit target remains active.
     GXFadeEscButtonAfterUse();
 }
 
@@ -222,9 +222,9 @@ static void GXAttachEscButtonToSDLWindow(void)
 
     [hostWindow bringSubviewToFront:s_escButton];
 
-    // Never initialize the button as transparent. Before the first real ESC
-    // press it must stay 100% visible; retries must not start a fade by themselves.
-    if (!s_escHasBeenUsed) {
+    // The button always starts a new game session at 100% visual opacity.
+    // The only automatic change is the single initial 3-second idle fade above.
+    if (!s_escInitialFadeScheduled) {
         s_escButton.alpha = 1.0;
         s_escButton.layer.opacity = 1.0;
     }
@@ -234,11 +234,16 @@ static void GXAttachEscButtonToSDLWindow(void)
     // fades from 100% to 0%. The button remains hit-testable at 0%.
     if (!s_escInitialFadeScheduled) {
         s_escInitialFadeScheduled = YES;
+        const NSUInteger fadeGeneration = s_escFadeGeneration;
 
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
-                if (s_windowID != 0 && s_escButton != nil) {
+                // If ESC was pressed during the first 3 seconds, that press
+                // owns the visibility cycle and this initial fade is cancelled.
+                if (s_windowID != 0 &&
+                    s_escButton != nil &&
+                    fadeGeneration == s_escFadeGeneration) {
                     GXFadeEscButtonAfterUse();
                 }
             });
@@ -311,8 +316,8 @@ extern "C" void GeneralsXRemoveIOSEscOverlay(void)
 
         s_sdlWindow = nullptr;
         s_windowID = 0;
-        s_escHasBeenUsed = NO;
         s_escInitialFadeScheduled = NO;
+        s_escFadeGeneration = 0;
     });
 }
 
