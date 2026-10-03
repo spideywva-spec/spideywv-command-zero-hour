@@ -8,14 +8,6 @@ on:
         description: "Optional successful Shared iPad Engine Shell run ID; blank uses latest"
         required: false
         type: string
-  workflow_run:
-    workflows:
-      - Shared | iPad | Engine Shell
-    types:
-      - completed
-    branches:
-      - main
-
 permissions:
   contents: write
   actions: read
