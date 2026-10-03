@@ -49,6 +49,18 @@ jobs:
       - name: Checkout DXVK fork
         run: git submodule update --init --recursive --depth 1 references/fbraz3-dxvk
 
+      # FIX FOR A13 / APPLE GPU FAMILY 6
+      - name: Apply DXVK iOS Patch
+        run: |
+          if [ -f Patches/dxvk-ios.patch ]; then
+            git -C references/fbraz3-dxvk apply ../../Patches/dxvk-ios.patch || true
+          fi
+          # Disable Vulkan 1.2/1.3 feature flags for Apple
+          sed -i '' 's/m_hasVulkan12 = m_driverInfo.version >= VK_MAKE_VERSION(1, 2, 0);/m_hasVulkan12 = false;/g' references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp || true
+          sed -i '' 's/m_hasVulkan13 = m_driverInfo.version >= VK_MAKE_VERSION(1, 3, 0);/m_hasVulkan13 = false;/g' references/fbraz3-dxvk/src/dxvk/dxvk_adapter.cpp || true
+          # Apple A12/A13 (Apple GPU Family 6) lack samplerMirrorClampToEdge.
+          sed -i '' 's/enabled\.vk12\.samplerMirrorClampToEdge = VK_TRUE;/enabled.vk12.samplerMirrorClampToEdge = VK_FALSE;/' references/fbraz3-dxvk/src/d3d9/d3d9_device.cpp
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
