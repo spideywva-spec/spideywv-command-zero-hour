@@ -545,6 +545,9 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window,
 			// During building this becomes a cancel-only two-finger gesture.
 			// It can never feed pinch/twist data into the camera.
 			if (s_touch.phase == TouchState::BUILD_PREVIEW) {
+				s_touch.finger2 = id;
+				s_touch.f2x = event.tfinger.x;
+				s_touch.f2y = event.tfinger.y;
 				beginTwoFingerGesture(mouse, window, width, height, true);
 				return;
 			}
