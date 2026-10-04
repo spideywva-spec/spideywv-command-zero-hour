@@ -329,7 +329,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.downTicks = SDL_GetTicks();
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
 		}
-		else if (s_touch.phase == TouchState::PENDING_ONE) {
+		else if (s_touch.phase == TouchState::BUILD_PLACEMENT && s_touch.finger1 != 0) {
 			s_touch.finger2 = event.tfinger.fingerID;
 			s_touch.f2x = event.tfinger.x;
 			s_touch.f2y = event.tfinger.y;
@@ -370,7 +370,8 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		    event.tfinger.fingerID == s_touch.finger1) {
 			// Building preview follows the finger directly. Do NOT synthesize
 			// RMB, because RMB is the camera-drag path in Generals.
-			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
+			s_buildPreviewMoved = true;
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
 		}
 		else if (s_touch.phase == TouchState::PENDING_ONE &&
 		    event.tfinger.fingerID == s_touch.finger1) {
@@ -524,14 +525,16 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		}
 
 		if (s_touch.phase == TouchState::BUILD_PLACEMENT) {
-			// Release freezes the current preview position. Do not send a mouse
-			// button event: construction is intentionally a separate second tap.
+			if (event.tfinger.fingerID != s_touch.finger1) break;
 			if (event.type == SDL_EVENT_FINGER_UP) {
-				s_touch.lastTapTicks = SDL_GetTicks();
-				s_touch.lastTapX = s_touch.downX;
-				s_touch.lastTapY = s_touch.downY;
+				if (!s_buildPreviewMoved) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, px, py, SDL_BUTTON_LEFT);
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, px, py, SDL_BUTTON_LEFT);
+				} else {
+					s_touch.finger1 = 0;
+				}
+				s_buildPreviewMoved = false;
 			}
-			s_touch.phase = TouchState::IDLE;
 			break;
 		}
 
