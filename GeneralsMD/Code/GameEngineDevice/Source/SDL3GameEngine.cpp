@@ -195,7 +195,7 @@ float s_lastSyntheticX = 0.0f;
 float s_lastSyntheticY = 0.0f;
 bool s_haveSyntheticPosition = false;
 
-static bool isBuildingPlacementMode(const SDL3Mouse *mouse)
+static bool isBuildingPlacementMode(SDL3Mouse *mouse)
 {
 	if (!mouse) {
 		return false;
