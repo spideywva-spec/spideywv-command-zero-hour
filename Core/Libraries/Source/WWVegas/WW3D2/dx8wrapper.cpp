@@ -1525,6 +1525,14 @@ bool DX8Wrapper::Toggle_Windowed()
 
 void DX8Wrapper::Set_Swap_Interval(int swap)
 {
+	// iOS/MoltenVK: do not combine a hard presentation interval with the
+	// engine's high-resolution 60 FPS pacer. A single frame over 16.67 ms
+	// otherwise turns a nominal 60 FPS stream into a visible 30 FPS cadence.
+	// The FramePacer remains responsible for the 60 FPS target.
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+		(void)swap;
+		_PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+#else
 	switch (swap) {
 		case 0: _PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE; break;
 		case 1: _PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_ONE ; break;
@@ -1532,6 +1540,7 @@ void DX8Wrapper::Set_Swap_Interval(int swap)
 		case 3: _PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_THREE; break;
 		default: _PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_ONE ; break;
 	}
+#endif
 
 	WWDEBUG_SAY(("DX8Wrapper::Set_Swap_Interval is resetting the device."));
 	Reset_Device();
