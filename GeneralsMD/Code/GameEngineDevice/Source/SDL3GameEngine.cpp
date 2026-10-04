@@ -161,8 +161,7 @@ constexpr Uint64 kTwoFingerTapMs    = 300;
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
-constexpr float kZoomPixelsToTicks  = 3.0f;    // 1 px разницы = 3 тика колеса
-constexpr float kZoomMaxTicksPerEvt = 15.0f;   // ограничение, чтобы быстрый пинч не дёргал
+constexpr float kPinchWheelScale    = 0.035f;  // зум: пиксели пинча × scale = wheelY
 constexpr float kRotateThresholdDeg = 25.0f;
 constexpr float kRotatePixelsPerRad = 80.0f;
 constexpr float kPi = 3.14159265358979323846f;
@@ -419,18 +418,14 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			const float cx = (s_touch.f1x + s_touch.f2x) * 0.5f * (float)width;
 			const float cy = (s_touch.f1y + s_touch.f2y) * 0.5f * (float)height;
 
-			// Зум. Каждый пиксель изменения расстояния между пальцами
-			// даёт 3 тика колеса. В SDL3Mouse тик превращается в
-			// wheelPos = wheelY * 120, и движок видит нормальное
-			// значение вместо округлённого до нуля.
-			// Ограничение ±15 тиков на одно событие — быстрый пинч не
-			// дёргает камеру, медленный — плавно двигает.
-			if (SDL_fabsf(distDelta) > 0.05f) {
+			// Зум. Пиксели изменения расстояния между пальцами умножаются
+			// на kPinchWheelScale и превращаются в wheelY. В SDL3Mouse это
+			// значение умножается на MOUSE_WHEEL_DELTA=120 → wheelPos.
+			// Чем быстрее двигаются пальцы, тем больше distDelta за кадр
+			// и тем быстрее зум. Медленное движение — плавный медленный зум.
+			if (SDL_fabsf(distDelta) > 0.5f) {
 				s_touch.pinchMoved = true;
-				float wheelY = distDelta * kZoomPixelsToTicks;
-				if (wheelY >  kZoomMaxTicksPerEvt) wheelY =  kZoomMaxTicksPerEvt;
-				if (wheelY < -kZoomMaxTicksPerEvt) wheelY = -kZoomMaxTicksPerEvt;
-				sendWheel(mouse, window, cx, cy, wheelY);
+				sendWheel(mouse, window, cx, cy, distDelta * kPinchWheelScale);
 			}
 
 			// Поворот камеры включается только после порога 25°.
@@ -453,11 +448,9 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 		if (id != s_touch.finger1) return;
 
-		// Отсев дубликатов motion.
 		if (SDL_fabsf(x - s_touch.lastX) < 0.5f &&
 		    SDL_fabsf(y - s_touch.lastY) < 0.5f) return;
 
-		// --- Режим стройки: превью едет за пальцем ---
 		if (s_touch.phase == TouchState::BuildPending) {
 			const float dx = x - s_touch.downX, dy = y - s_touch.downY;
 			if (SDL_sqrtf(dx*dx + dy*dy) < kMoveDeadzonePx) return;
@@ -478,7 +471,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// --- Один палец: классификация ---
 		if (s_touch.phase == TouchState::OnePending) {
 			const float dx = x - s_touch.downX, dy = y - s_touch.downY;
 			if (SDL_sqrtf(dx*dx + dy*dy) < kMoveDeadzonePx) return;
