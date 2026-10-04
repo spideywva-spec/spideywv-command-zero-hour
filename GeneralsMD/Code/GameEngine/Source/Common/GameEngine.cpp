@@ -872,10 +872,16 @@ void GameEngine::init()
 
 		TheSubsystemList->postProcessLoadAll();
 
-		// GeneralsX @bugfix Copilot 11/05/2026 Prevent uncapped render when FPS limiter is enabled but no valid limit value was loaded.
-		if (TheGlobalData->m_useFpsLimit && TheGlobalData->m_framesPerSecondLimit <= 0)
+		// GeneralsX @bugfix 05/10/2026 Keep iOS render pacing at a real 60 FPS when
+		// launcher/settings did not provide a valid limit.  BaseFps remains the
+		// historical 30 FPS logic baseline; it must not become the iOS render cap.
+		if (TheGlobalData->m_framesPerSecondLimit <= 0)
 		{
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+			TheWritableGlobalData->m_framesPerSecondLimit = 60;
+#else
 			TheWritableGlobalData->m_framesPerSecondLimit = BaseFps;
+#endif
 		}
 
 		TheFramePacer->setFramesPerSecondLimit(TheGlobalData->m_framesPerSecondLimit);
