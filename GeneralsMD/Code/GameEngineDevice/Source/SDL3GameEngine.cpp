@@ -214,7 +214,8 @@ static float normalizedAngleDelta(float a, float b)
 
 void sendSyntheticMouse(SDL3Mouse *mouse, SDL_Window *window, Uint32 type,
                         float x, float y, Uint8 button = 0,
-                        float wheelY = 0.0f, Uint8 clicks = 1)
+                        float wheelY = 0.0f, Uint8 clicks = 1,
+                        bool suppressMotionDelta = false)
 {
 	if (!mouse || !window) {
 		return;
@@ -230,9 +231,12 @@ void sendSyntheticMouse(SDL3Mouse *mouse, SDL_Window *window, Uint32 type,
 			ev.motion.windowID = windowID;
 			ev.motion.x = x;
 			ev.motion.y = y;
-			if (s_haveSyntheticPosition) {
+			if (s_haveSyntheticPosition && !suppressMotionDelta) {
 				ev.motion.xrel = x - s_lastSyntheticX;
 				ev.motion.yrel = y - s_lastSyntheticY;
+			} else {
+				ev.motion.xrel = 0.0f;
+				ev.motion.yrel = 0.0f;
 			}
 			s_lastSyntheticX = x;
 			s_lastSyntheticY = y;
@@ -323,7 +327,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.f1x = event.tfinger.x;
 			s_touch.f1y = event.tfinger.y;
 			s_touch.downTicks = SDL_GetTicks();
-			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
 		}
 		else if (s_touch.phase == TouchState::PENDING_ONE) {
 			s_touch.finger2 = event.tfinger.fingerID;
@@ -377,6 +381,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			if (moved >= TOUCH_MOVE_EPSILON_PX) {
 				s_touch.lastX = px;
 				s_touch.lastY = py;
+				s_touch.lastMotionTicks = SDL_GetTicks();
 				const bool selectionArmed =
 					(SDL_GetTicks() - s_touch.downTicks) >= SELECTION_HOLD_MS;
 				if (selectionArmed) {
