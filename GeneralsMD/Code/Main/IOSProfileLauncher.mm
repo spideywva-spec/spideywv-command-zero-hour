@@ -1793,10 +1793,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.gameFileVideoLayer = [AVPlayerLayer playerLayerWithPlayer:self.gameFileVideoPlayer];
     self.gameFileVideoLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     self.gameFileVideoLayer.opacity = 1.0;
-    // The video is the first sublayer of the transparent installer view.
-        // Do not use a negative zPosition: that can place AVPlayerLayer behind
-        // the host view on some iOS Core Animation compositing paths.
-        self.gameFileVideoLayer.frame = self.gameFileView.bounds;
+    // The video is the first sublayer of the transparent installer view.\n    // Do not use a negative zPosition: that can place AVPlayerLayer behind\n    // the host view on some iOS Core Animation compositing paths.\n    self.gameFileVideoLayer.frame = self.gameFileView.bounds;
     [self.gameFileView.layer insertSublayer:self.gameFileVideoLayer atIndex:0];
 
     __weak GXProfileLauncherViewController *weakSelf = self;
@@ -2507,3 +2504,253 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.groundLightingSwitch.on = SettingBoolValue(values, @"UseLightMap", YES);
     self.softWaterSwitch.on = SettingBoolValue(values, @"ShowSoftWaterEdge", YES);
     self.buildingOcclusionSwitch.on = SettingBoolValue(values, @"BuildingOcclusion", YES);
+    self.showPropsSwitch.on = SettingBoolValue(values, @"ShowTrees", YES);
+    self.extraAnimationsSwitch.on = SettingBoolValue(values, @"ExtraAnimations", YES);
+    self.dynamicLODSwitch.on = SettingBoolValue(values, @"DynamicLOD", NO);
+    self.heatEffectsSwitch.on = SettingBoolValue(values, @"HeatEffects", NO);
+
+    NSInteger textureReduction = [SettingValue(values, @"TextureReduction", SettingValue(values, @"TextureReductionFactor", @"0")) integerValue];
+    self.textureQualitySegment.selectedSegmentIndex = MAX(0, MIN(2, textureReduction));
+
+    NSInteger particleCount = [SettingValue(values, @"MaxParticleCount", @"2500") integerValue];
+    self.particleQualitySegment.selectedSegmentIndex = particleCount <= 1200 ? 0 : (particleCount >= 4000 ? 2 : 1);
+
+    NSString *filter = SettingValue(values, @"TextureFilter", @"Anisotropic");
+    self.textureFilterSegment.selectedSegmentIndex =
+        [filter caseInsensitiveCompare:@"Bilinear"] == NSOrderedSame ? 0 :
+        ([filter caseInsensitiveCompare:@"Trilinear"] == NSOrderedSame ? 1 : 2);
+}
+
+- (void)resetНастройки
+{
+    // Reset the visible controls and immediately persist the defaults to the same
+    // Options.ini file consumed by the game. This replaces the old missing selector
+    // that caused the launcher to terminate when the button was pressed.
+    [self resetНастройкиControls];
+    [self saveНастройки];
+    self.settingsStatus.text = @"✓ Настройки сброшены и сохранены. Изменения применятся при следующем запуске игры.";
+    self.settingsStatus.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.48 alpha:1.0];
+    fprintf(stderr, "INFO: iOS launcher settings reset to defaults and saved to Options.ini\n");
+}
+
+- (void)resetНастройкиControls
+{
+    [self resetZeroHourSettingsControls];
+
+    self.maxCameraSlider.value = 550.0f;
+    self.minCameraSlider.value = 70.0f;
+    self.cameraPitchSlider.value = 37.0f;
+    self.enforceMaxSwitch.on = NO;
+    self.scrollSpeedSlider.value = 1.0f;
+    self.drawDistanceSlider.value = 1.20f;
+    self.fpsLimitSwitch.on = YES;
+    self.fpsSlider.value = 60.0f;
+    [self settingsSliderChanged:nil];
+    [self fpsLimitChanged:self.fpsLimitSwitch];
+}
+
+- (void)loadНастройкиControls
+{
+    [self loadZeroHourSettingsControls];
+
+    NSError *error = nil;
+    NSString *contents = [NSString stringWithContentsOfFile:IOSIPadOverridesPath()
+                                                   encoding:NSUTF8StringEncoding
+                                                      error:&error];
+    if (contents == nil)
+    {
+        self.maxCameraSlider.value = 550.0f;
+        self.minCameraSlider.value = 70.0f;
+        self.cameraPitchSlider.value = 37.0f;
+        self.enforceMaxSwitch.on = NO;
+        self.scrollSpeedSlider.value = 1.0f;
+        self.drawDistanceSlider.value = 1.20f;
+        self.fpsLimitSwitch.on = YES;
+        self.fpsSlider.value = 60.0f;
+        self.settingsStatus.text = @"Используются настройки камеры по умолчанию.";
+        if (error != nil)
+        {
+            fprintf(stderr, "WARNING: iOS launcher could not read iOSIPadOverrides.ini: %s\n",
+                    [[error description] UTF8String]);
+        }
+    }
+    else
+    {
+        self.maxCameraSlider.value = [self floatSetting:@"MaxCameraHeight" contents:contents fallback:550.0f];
+        self.minCameraSlider.value = [self floatSetting:@"MinCameraHeight" contents:contents fallback:70.0f];
+        self.cameraPitchSlider.value = [self floatSetting:@"CameraPitch" contents:contents fallback:37.0f];
+        self.enforceMaxSwitch.on = [self boolSetting:@"EnforceMaxCameraHeight" contents:contents fallback:NO];
+        self.scrollSpeedSlider.value = [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f];
+        self.drawDistanceSlider.value = [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.20f];
+
+        // FPS is mirrored in both the engine bridge and Options.ini. Prefer
+        // Options.ini when present, while accepting either alias.
+        NSDictionary<NSString *, NSString *> *gameOptions = ReadKeyValueFile(GameOptionsPath());
+        NSString *fpsLimitValue = gameOptions[@"UseFPSLimit"];
+        if (fpsLimitValue.length == 0)
+            fpsLimitValue = gameOptions[@"FPSLimit"];
+        if (fpsLimitValue.length > 0)
+            self.fpsLimitSwitch.on = SettingBoolValue(@{@"Value": fpsLimitValue}, @"Value", YES);
+        else
+            self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
+
+        NSString *fpsValue = gameOptions[@"FramesPerSecondLimit"];
+        self.fpsSlider.value = fpsValue.length > 0
+            ? fpsValue.floatValue
+            : [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
+        self.settingsStatus.text = @"";
+    }
+
+    [self settingsSliderChanged:nil];
+    [self fpsLimitChanged:self.fpsLimitSwitch];
+}
+
+- (void)showНастройки
+{
+    [self loadНастройкиControls];
+    self.menuStack.hidden = NO;
+    self.diagnosticsView.hidden = YES;
+    self.profileView.hidden = YES;
+    self.modalBackdrop.hidden = NO;
+    self.settingsView.hidden = NO;
+}
+
+- (void)hideНастройки
+{
+    self.settingsView.hidden = YES;
+    self.modalBackdrop.hidden = YES;
+    self.menuStack.hidden = NO;
+}
+
+- (void)settingsSliderChanged:(UISlider *)sender
+{
+    auto snap = [](float value, float step) -> float {
+        return roundf(value / step) * step;
+    };
+
+    self.maxCameraSlider.value = snap(self.maxCameraSlider.value, 10.0f);
+    self.minCameraSlider.value = snap(self.minCameraSlider.value, 5.0f);
+    self.cameraPitchSlider.value = snap(self.cameraPitchSlider.value, 1.0f);
+    self.scrollSpeedSlider.value = snap(self.scrollSpeedSlider.value, 0.1f);
+    self.drawDistanceSlider.value = snap(self.drawDistanceSlider.value, 0.05f);
+    self.fpsSlider.value = snap(self.fpsSlider.value, 5.0f);
+
+    self.maxCameraValue.text = [NSString stringWithFormat:@"%.0f", self.maxCameraSlider.value];
+    self.minCameraValue.text = [NSString stringWithFormat:@"%.0f", self.minCameraSlider.value];
+    self.cameraPitchValue.text = [NSString stringWithFormat:@"%.0f°", self.cameraPitchSlider.value];
+    self.scrollSpeedValue.text = [NSString stringWithFormat:@"%.1fx", self.scrollSpeedSlider.value];
+    self.drawDistanceValue.text = [NSString stringWithFormat:@"%.2fx", self.drawDistanceSlider.value];
+    self.fpsValue.text = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
+
+    // Sliders are persisted immediately as the user moves them.
+    [self saveНастройки];
+}
+
+- (void)settingsControlChanged:(id)sender
+{
+    (void)sender;
+    [self saveНастройки];
+}
+
+- (void)fpsLimitChanged:(UISwitch *)sender
+{
+    BOOL enabled = self.fpsLimitSwitch.on;
+    self.fpsSlider.enabled = enabled;
+    self.fpsSlider.alpha = enabled ? 1.0 : 0.35;
+    self.fpsValue.alpha = enabled ? 1.0 : 0.35;
+
+    // Persist the FPS toggle immediately, just like every other launcher setting.
+    [self saveНастройки];
+}
+
+@end
+
+const char *GeneralsXRunIOSProfileLauncher()
+{
+    const char *forcedProfile = getenv("GX_LAUNCH_PROFILE");
+    if (IsSupportedProfile(forcedProfile))
+    {
+        strlcpy(gSelectedProfile, forcedProfile, sizeof(gSelectedProfile));
+        fprintf(stderr, "INFO: iOS launcher forced profile: %s\\n", gSelectedProfile);
+        return gSelectedProfile;
+    }
+
+    NSString *autoProfile = BundledAutoLaunchProfile();
+    if (autoProfile != nil)
+    {
+        const char *utf8 = [autoProfile UTF8String];
+        strlcpy(gSelectedProfile, utf8, sizeof(gSelectedProfile));
+
+        if (![autoProfile isEqualToString:@"zerohour"])
+        {
+            fprintf(stderr, "INFO: iOS launcher auto-selected bundled profile: %s\\n",
+                    gSelectedProfile);
+            return gSelectedProfile;
+        }
+
+        fprintf(stderr,
+                "[ZEROHOUR-SETTINGS] dedicated ZeroHour launcher shown for settings access\\n");
+    }
+
+    gLauncherFinished.store(false, std::memory_order_release);
+    if (autoProfile == nil)
+        strlcpy(gSelectedProfile, "vanilla", sizeof(gSelectedProfile));
+
+    __block UIWindow *launcherWindow = nil;
+
+    void (^presentLauncher)(void) = ^{
+        UIWindowScene *scene = FindActiveWindowScene();
+        if (scene != nil)
+        {
+            launcherWindow = [[UIWindow alloc] initWithWindowScene:scene];
+            launcherWindow.frame = scene.coordinateSpace.bounds;
+        }
+        else
+        {
+            launcherWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
+
+        launcherWindow.windowLevel = UIWindowLevelNormal + 1.0;
+        launcherWindow.rootViewController = [[GXProfileLauncherViewController alloc] init];
+        [launcherWindow makeKeyAndVisible];
+
+        fprintf(stderr, "INFO: iOS native launcher presented\\n");
+    };
+
+    if ([NSThread isMainThread])
+        presentLauncher();
+    else
+        dispatch_sync(dispatch_get_main_queue(), presentLauncher);
+
+    if ([NSThread isMainThread])
+    {
+        while (!gLauncherFinished.load(std::memory_order_acquire))
+        {
+            @autoreleasepool
+            {
+                [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
+                                      beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+            }
+        }
+    }
+    else
+    {
+        while (!gLauncherFinished.load(std::memory_order_acquire))
+            usleep(10000);
+    }
+
+    void (^dismissLauncher)(void) = ^{
+        launcherWindow.hidden = YES;
+        launcherWindow.rootViewController = nil;
+        launcherWindow = nil;
+    };
+
+    if ([NSThread isMainThread])
+        dismissLauncher();
+    else
+        dispatch_sync(dispatch_get_main_queue(), dismissLauncher);
+
+    return gSelectedProfile;
+}
+
+#endif
