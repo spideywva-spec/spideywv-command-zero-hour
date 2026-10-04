@@ -483,6 +483,8 @@ UIButton *MakeButton(NSString *title, id target, SEL action)
 @property(nonatomic, strong) UISegmentedControl *textureQualitySegment;
 @property(nonatomic, strong) UISegmentedControl *particleQualitySegment;
 @property(nonatomic, strong) UISegmentedControl *textureFilterSegment;
+@property(nonatomic, strong) UISegmentedControl *anisotropySegment;
+@property(nonatomic, strong) UISegmentedControl *antiAliasingSegment;
 
 @property(nonatomic, strong) UIView *diagnosticsView;
 @property(nonatomic, strong) UIView *modalBackdrop;
@@ -1080,7 +1082,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.heatEffectsSwitch = [[UISwitch alloc] init];
     self.textureQualitySegment = [self makeSegmented:@[@"High", @"Medium", @"Low"]];
     self.particleQualitySegment = [self makeSegmented:@[@"Low", @"Medium", @"High"]];
-    self.textureFilterSegment = [self makeSegmented:@[@"Bilinear", @"Trilinear", @"Anisotropic 8x"]];
+    self.textureFilterSegment = [self makeSegmented:@[@"Bilinear", @"Trilinear", @"Anisotropic"]];
+    self.anisotropySegment = [self makeSegmented:@[@"2x", @"4x", @"8x", @"16x"]];
+    self.antiAliasingSegment = [self makeSegmented:@[@"Off", @"2x", @"4x", @"8x"]];
     [self.zeroHourControlBarSegment setTitle:@"ZeroHour" forSegmentAtIndex:0];
     [self.zeroHourControlBarSegment setTitle:@"Про" forSegmentAtIndex:1];
     [self.zeroHourControlBarSegment setTitle:@"Стандарт" forSegmentAtIndex:2];
@@ -1105,7 +1109,15 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     [self.particleQualitySegment setTitle:@"Высокое" forSegmentAtIndex:2];
     [self.textureFilterSegment setTitle:@"Билинейная" forSegmentAtIndex:0];
     [self.textureFilterSegment setTitle:@"Трилинейная" forSegmentAtIndex:1];
-    [self.textureFilterSegment setTitle:@"Анизотропная 8x" forSegmentAtIndex:2];
+    [self.textureFilterSegment setTitle:@"Анизотропная" forSegmentAtIndex:2];
+    [self.anisotropySegment setTitle:@"2x" forSegmentAtIndex:0];
+    [self.anisotropySegment setTitle:@"4x" forSegmentAtIndex:1];
+    [self.anisotropySegment setTitle:@"8x" forSegmentAtIndex:2];
+    [self.anisotropySegment setTitle:@"16x" forSegmentAtIndex:3];
+    [self.antiAliasingSegment setTitle:@"Выкл." forSegmentAtIndex:0];
+    [self.antiAliasingSegment setTitle:@"2x" forSegmentAtIndex:1];
+    [self.antiAliasingSegment setTitle:@"4x" forSegmentAtIndex:2];
+    [self.antiAliasingSegment setTitle:@"8x" forSegmentAtIndex:3];
 
     self.maxCameraSlider = [self makeSliderWithMin:300.0f max:800.0f];
     self.minCameraSlider = [self makeSliderWithMin:40.0f max:150.0f];
@@ -1152,6 +1164,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         [self segmentedRow:@"Качество текстур" control:self.textureQualitySegment],
         [self segmentedRow:@"Частицы" control:self.particleQualitySegment],
         [self segmentedRow:@"Фильтрация текстур" control:self.textureFilterSegment],
+        [self segmentedRow:@"Анизотропная фильтрация" control:self.anisotropySegment],
+        [self segmentedRow:@"Сглаживание MSAA" control:self.antiAliasingSegment],
 
         [self sectionLabel:@"КАМЕРА / ПРОИЗВОДИТЕЛЬНОСТЬ"],
         [self sliderRow:@"Максимальная высота камеры" slider:self.maxCameraSlider value:self.maxCameraValue],
@@ -2219,8 +2233,13 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"ExtraAnimations"] = self.extraAnimationsSwitch.on ? @"yes" : @"no";
     gameOptions[@"BuildingOcclusion"] = self.buildingOcclusionSwitch.on ? @"yes" : @"no";
     gameOptions[@"MaxParticleCount"] = [NSString stringWithFormat:@"%ld", (long)particleCount];
+    gameOptions[@"IdealStaticGameLOD"] = @"High";
+    gameOptions[@"StaticGameLOD"] = @"Custom";
     gameOptions[@"TextureFilter"] = textureFilter;
-    gameOptions[@"AnisotropyLevel"] = @"8";
+    NSArray<NSString *> *anisotropyLevels = @[@"2", @"4", @"8", @"16"];
+    gameOptions[@"AnisotropyLevel"] = anisotropyLevels[MAX(0, MIN(3, self.anisotropySegment.selectedSegmentIndex))];
+    NSArray<NSString *> *aaLevels = @[@"0", @"2", @"4", @"8"];
+    gameOptions[@"AntiAliasing"] = aaLevels[MAX(0, MIN(3, self.antiAliasingSegment.selectedSegmentIndex))];
     gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"yes" : @"no";
     gameOptions[@"FPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
@@ -2423,6 +2442,26 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
 - (void)loadНастройкиControls
 {
     [self loadZeroHourSettingsControls];
+    NSDictionary<NSString *, NSString *> *graphics = ReadKeyValueFile(EngineOptionsPath());
+    self.shadow3DSwitch.on = SettingBoolValue(graphics, @"UseShadowVolumes", NO);
+    self.shadow2DSwitch.on = SettingBoolValue(graphics, @"UseShadowDecals", YES);
+    self.cloudShadowsSwitch.on = SettingBoolValue(graphics, @"UseCloudMap", NO);
+    self.groundLightingSwitch.on = SettingBoolValue(graphics, @"UseLightMap", YES);
+    self.softWaterSwitch.on = SettingBoolValue(graphics, @"ShowSoftWaterEdge", YES);
+    self.buildingOcclusionSwitch.on = SettingBoolValue(graphics, @"BuildingOcclusion", YES);
+    self.showPropsSwitch.on = SettingBoolValue(graphics, @"ShowTrees", YES);
+    self.extraAnimationsSwitch.on = SettingBoolValue(graphics, @"ExtraAnimations", YES);
+    self.dynamicLODSwitch.on = SettingBoolValue(graphics, @"DynamicLOD", NO);
+    self.heatEffectsSwitch.on = SettingBoolValue(graphics, @"HeatEffects", NO);
+    self.textureQualitySegment.selectedSegmentIndex = MAX(0, MIN(2, [SettingValue(graphics, @"TextureReduction", @"0") integerValue]));
+    NSInteger particleCount = [SettingValue(graphics, @"MaxParticleCount", @"2500") integerValue];
+    self.particleQualitySegment.selectedSegmentIndex = particleCount <= 1200 ? 0 : (particleCount >= 4000 ? 2 : 1);
+    NSString *filter = SettingValue(graphics, @"TextureFilter", @"Anisotropic");
+    self.textureFilterSegment.selectedSegmentIndex = [filter caseInsensitiveCompare:@"Bilinear"] == NSOrderedSame ? 0 : ([filter caseInsensitiveCompare:@"Trilinear"] == NSOrderedSame ? 1 : 2);
+    NSInteger anisotropy = [SettingValue(graphics, @"AnisotropyLevel", @"16") integerValue];
+    self.anisotropySegment.selectedSegmentIndex = anisotropy <= 2 ? 0 : (anisotropy <= 4 ? 1 : (anisotropy <= 8 ? 2 : 3));
+    NSInteger aa = [SettingValue(graphics, @"AntiAliasing", @"0") integerValue];
+    self.antiAliasingSegment.selectedSegmentIndex = aa <= 0 ? 0 : (aa <= 2 ? 1 : (aa <= 4 ? 2 : 3));
 
     NSError *error = nil;
     NSString *contents = [NSString stringWithContentsOfFile:IOSIPadOverridesPath()
