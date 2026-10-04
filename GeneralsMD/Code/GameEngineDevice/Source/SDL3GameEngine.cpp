@@ -134,7 +134,7 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 //   отпустил после вращения         -> LMB up, авто-стройка
 //
 // Два пальца:
-//   pinch                           -> wheel (зум), плавно, по скорости
+//   pinch                           -> wheel (зум), целые тики по накопителю
 //   twist после 25°                 -> MMB drag, поворот камеры
 //   короткий синхронный шлепок      -> RMB click (отмена/сброс)
 // ---------------------------------------------------------------------------
@@ -188,6 +188,11 @@ bool  s_haveSynth = false;
 float s_camX = 0.0f;
 float s_camY = 0.0f;
 
+// Накопитель пинча: шлём тик колеса только когда набралось достаточно
+// пикселей. Без него wheelY получается 0.05..0.2, движок округляет его
+// до нуля и зум не срабатывает.
+float s_pinchAccum = 0.0f;
+
 constexpr Uint64 kSelectionHoldMs   = 250;
 constexpr Uint64 kBuildRotateHoldMs = 200;
 constexpr Uint64 kDoubleTapMs       = 300;
@@ -196,9 +201,9 @@ constexpr Uint64 kTwoFingerTapMs    = 300;
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
-constexpr float kPinchPixelsPerTick = 20.0f;   // 20 px пинча = 1 тик колеса
+constexpr float kPinchPixelsPerTick = 20.0f;   // 20 px пинча = 1 целый тик колеса
 constexpr float kRotateThresholdDeg = 25.0f;   // порог включения поворота камеры
-constexpr float kRotatePixelsPerRad = 250.0f;  // 1 рад twist = 250 px MMB
+constexpr float kRotatePixelsPerRad = 80.0f;   // 1 рад twist = 80 px MMB (умеренная скорость)
 constexpr float kPi = 3.14159265358979323846f;
 
 // Точная проверка режима стройки. getPendingPlaceType() возвращает
@@ -312,6 +317,7 @@ static void resetTouchState()
 	s_touch.lastTapX = ltx; s_touch.lastTapY = lty;
 	s_touch.haveLastTap = hlt;
 	s_haveSynth = false;
+	s_pinchAccum = 0.0f;
 }
 
 static void emitTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
@@ -448,6 +454,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.pinchMoved = false;
 			s_touch.rotationArmed = false;
 			s_touch.rotationAccum = 0.0f;
+			s_pinchAccum = 0.0f;
 			s_touch.phase = TouchState::TwoFinger;
 			return;
 		}
@@ -475,11 +482,19 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			const float cx = (s_touch.f1x + s_touch.f2x) * 0.5f * (float)width;
 			const float cy = (s_touch.f1y + s_touch.f2y) * 0.5f * (float)height;
 
-			// Зум: пиксели / пиксели-на-тик. Плавно, по скорости пальцев.
-			if (SDL_fabsf(distDelta) > 0.5f) {
+			// Зум через накопитель: копим пиксели пинча и шлём целые тики
+			// колеса. Целый тик = wheelY 1.0 = wheelPos 120 после SDL3Mouse,
+			// что движок воспринимает как один «щелчок» зума.
+			s_pinchAccum += distDelta;
+			while (s_pinchAccum >= kPinchPixelsPerTick) {
 				s_touch.pinchMoved = true;
-				const float wheelY = distDelta / kPinchPixelsPerTick;
-				sendWheel(mouse, window, cx, cy, wheelY);
+				sendWheel(mouse, window, cx, cy, 1.0f);
+				s_pinchAccum -= kPinchPixelsPerTick;
+			}
+			while (s_pinchAccum <= -kPinchPixelsPerTick) {
+				s_touch.pinchMoved = true;
+				sendWheel(mouse, window, cx, cy, -1.0f);
+				s_pinchAccum += kPinchPixelsPerTick;
 			}
 
 			// Поворот камеры включается только после порога.
@@ -493,6 +508,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 					sendBtnDown(mouse, window, cx, cy, SDL_BUTTON_MIDDLE);
 				}
 			} else if (SDL_fabsf(angleDelta) > 0.0001f) {
+				// kRotatePixelsPerRad = 80 — умеренная скорость поворота.
 				const float shift = angleDelta * kRotatePixelsPerRad;
 				const float newX = s_synthX + shift;
 				sendMotion(mouse, window, newX, s_synthY);
