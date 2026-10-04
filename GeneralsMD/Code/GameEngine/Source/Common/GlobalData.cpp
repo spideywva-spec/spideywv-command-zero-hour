@@ -674,8 +674,15 @@ GlobalData::GlobalData()
 	m_useWaterPlane = FALSE;
 	m_useCloudPlane = FALSE;
 	m_downwindAngle = ( -0.785f );//Northeast!
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS: keep the classic projected/volumetric shadow paths enabled by default.
+	// Options.ini still overrides these values, so the launcher switches remain authoritative.
+	m_useShadowVolumes = TRUE;
+	m_useShadowDecals = TRUE;
+#else
 	m_useShadowVolumes = FALSE;
 	m_useShadowDecals = FALSE;
+#endif
 	m_textureReductionFactor = -1;
 	m_enableBehindBuildingMarkers = TRUE;
 	m_scriptDebug = FALSE;
