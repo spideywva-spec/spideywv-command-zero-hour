@@ -212,6 +212,11 @@ float s_lastSyntheticX = 0.0f;
 float s_lastSyntheticY = 0.0f;
 bool s_haveSyntheticPosition = false;
 
+static void sendSyntheticMouse(SDL3Mouse *mouse, SDL_Window *window,
+                               Uint32 type, float x, float y,
+                               Uint8 button, float wheelY,
+                               Uint8 clicks, bool suppressMotionDelta);
+
 static bool isBuildingPlacementMode(SDL3Mouse *mouse)
 {
 	if (!mouse) return false;
