@@ -321,6 +321,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.phase = isBuildingPlacementMode(mouse)
 				? TouchState::BUILD_PLACEMENT
 				: TouchState::PENDING_ONE;
+			s_buildPreviewMoved = false;
 			s_touch.finger1 = event.tfinger.fingerID;
 			s_touch.downX = s_touch.lastX = px;
 			s_touch.downY = s_touch.lastY = py;
@@ -329,7 +330,23 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.downTicks = SDL_GetTicks();
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
 		}
+		else if (s_touch.phase == TouchState::BUILD_PLACEMENT && s_touch.finger1 == 0) {
+			s_touch.finger1 = event.tfinger.fingerID;
+			s_touch.downX = s_touch.lastX = px;
+			s_touch.downY = s_touch.lastY = py;
+			s_touch.f1x = event.tfinger.x;
+			s_touch.f1y = event.tfinger.y;
+			s_touch.downTicks = SDL_GetTicks();
+			s_buildPreviewMoved = false;
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
+		}
 		else if (s_touch.phase == TouchState::BUILD_PLACEMENT && s_touch.finger1 != 0) {
+			s_touch.finger2 = event.tfinger.fingerID;
+			s_touch.f2x = event.tfinger.x;
+			s_touch.f2y = event.tfinger.y;
+			beginTwoFingerGesture(mouse, window, winW, winH);
+		}
+		else if (s_touch.phase == TouchState::PENDING_ONE) {
 			s_touch.finger2 = event.tfinger.fingerID;
 			s_touch.f2x = event.tfinger.x;
 			s_touch.f2y = event.tfinger.y;
