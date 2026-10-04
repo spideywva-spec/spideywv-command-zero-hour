@@ -318,6 +318,20 @@ char const * GameFileClass::Set_Name( char const *filename )
 
 	}
 
+	// GeneralsX @bugfix 05/10/2026 - Image assets must be resolved through the
+	// archive filesystem as well as the normal FileSystem lookup. On iOS/portable
+	// builds the local asset root and BIG archive root can differ, which previously
+	// made valid TexturesZH.big DDS files look missing to W3D.
+	if( m_fileExists == FALSE && isImageFileType(fileType) && TheArchiveFileSystem )
+	{
+		static const char *archiveTexturePath = "Art/Textures/";
+		char archivePath[_MAX_PATH];
+		snprintf(archivePath, ARRAY_SIZE(archivePath), "%s%s", archiveTexturePath, filename);
+		m_fileExists = TheArchiveFileSystem->doesFileExist(archivePath);
+		if (m_fileExists)
+			strlcpy(m_filePath, archivePath, ARRAY_SIZE(m_filePath));
+	}
+
 	// GeneralsX @bugfix BenderAI 18/02/2026 - Cross-extension fallback for TGA/DDS mismatches.
 	// Some regional game installs (e.g. Brazilian Steam) store textures with a different
 	// extension than what the W3D/INI data requests (.tga vs .dds or vice versa).
@@ -410,6 +424,13 @@ int  GameFileClass::Open(int rights)
 	}
 
 	m_theFile = TheFileSystem->openFile( m_filePath, File::READ | File::BINARY );
+
+	// Portable/iOS fallback: if the composite FileSystem cannot open an image
+	// that was confirmed in a BIG archive, open it directly from the archive.
+	if (m_theFile == nullptr && isImageFileType(getFileType(m_filename)) && TheArchiveFileSystem)
+	{
+		m_theFile = TheArchiveFileSystem->openFile(m_filePath, File::READ | File::BINARY);
+	}
 
 	return (m_theFile != nullptr);
 }
