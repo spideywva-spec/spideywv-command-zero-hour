@@ -169,6 +169,7 @@ struct TouchState {
 	float gestureCenterY = 0.0f;
 	bool rotationActive = false;
 	bool twoFingerMoved = false;
+	bool buildRotationActive = false;
 	bool finger1Released = false;
 	bool finger2Released = false;
 
@@ -178,6 +179,9 @@ struct TouchState {
 };
 
 TouchState s_touch;
+
+// Building placement state: short tap builds; 200 ms hold enters single-finger MMB rotation.
+static bool s_buildPreviewMoved = false;
 
 constexpr Uint64 SELECTION_HOLD_MS = 250;
 constexpr Uint64 DOUBLE_TAP_MS = 350;
@@ -322,6 +326,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 				? TouchState::BUILD_PLACEMENT
 				: TouchState::PENDING_ONE;
 			s_buildPreviewMoved = false;
+			s_touch.buildRotationActive = false;
 			s_touch.finger1 = event.tfinger.fingerID;
 			s_touch.downX = s_touch.lastX = px;
 			s_touch.downY = s_touch.lastY = py;
@@ -338,6 +343,7 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			s_touch.f1y = event.tfinger.y;
 			s_touch.downTicks = SDL_GetTicks();
 			s_buildPreviewMoved = false;
+			s_touch.buildRotationActive = false;
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
 		}
 		else if (s_touch.phase == TouchState::BUILD_PLACEMENT && s_touch.finger1 != 0) {
@@ -385,10 +391,15 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 
 		if (s_touch.phase == TouchState::BUILD_PLACEMENT &&
 		    event.tfinger.fingerID == s_touch.finger1) {
-			// Building preview follows the finger directly. Do NOT synthesize
-			// RMB, because RMB is the camera-drag path in Generals.
-			s_buildPreviewMoved = true;
-			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
+			// Before the 200 ms hold threshold, the finger moves the building
+			// preview only. Once the hold arms rotation, the same finger becomes
+			// an MMB drag and rotates the building. The camera never receives RMB.
+			if (s_touch.buildRotationActive) {
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
+			} else {
+				s_buildPreviewMoved = true;
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py, 0, 0.0f, 1, true);
+			}
 		}
 		else if (s_touch.phase == TouchState::PENDING_ONE &&
 		    event.tfinger.fingerID == s_touch.finger1) {
@@ -544,12 +555,26 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		if (s_touch.phase == TouchState::BUILD_PLACEMENT) {
 			if (event.tfinger.fingerID != s_touch.finger1) break;
 			if (event.type == SDL_EVENT_FINGER_UP) {
-				if (!s_buildPreviewMoved) {
+				// A 200 ms hold enters MMB rotation. Releasing the same finger
+				// always confirms the building after ending the rotation drag.
+				if (s_touch.buildRotationActive) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
+					                   px, py, SDL_BUTTON_MIDDLE);
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
+					                   px, py, SDL_BUTTON_LEFT);
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
+					                   px, py, SDL_BUTTON_LEFT);
+					s_touch.finger1 = 0;
+				} else if (!s_buildPreviewMoved) {
+					// A normal short tap builds immediately.
 					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, px, py, SDL_BUTTON_LEFT);
 					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, px, py, SDL_BUTTON_LEFT);
 				} else {
+					// Keep the preview placement alive after a drag; the next tap
+					// can confirm it without re-entering camera mode.
 					s_touch.finger1 = 0;
 				}
+				s_touch.buildRotationActive = false;
 				s_buildPreviewMoved = false;
 			}
 			break;
@@ -597,6 +622,19 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 
 void updateTouchLongPress(SDL3Mouse *mouse, SDL_Window *window)
 {
+	if (s_touch.phase == TouchState::BUILD_PLACEMENT &&
+	    s_touch.finger1 != 0 &&
+	    !s_touch.buildRotationActive &&
+	    (SDL_GetTicks() - s_touch.downTicks) >= 200) {
+		// Building controls are intentionally single-finger:
+		// short tap = build, 200 ms hold = MMB rotation, release = build.
+		// Do not use the two-finger gesture path here.
+		s_touch.buildRotationActive = true;
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
+		                   s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
+		return;
+	}
+
 	if (s_touch.phase != TouchState::PENDING_ONE) {
 		return;
 	}
