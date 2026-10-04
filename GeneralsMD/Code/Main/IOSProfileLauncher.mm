@@ -2335,11 +2335,11 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.zeroHourWaterSwitch.on = SettingBoolValue(defaults, @"WaterEffects", YES);
     self.zeroHourExtraBuildingPropsSwitch.on = SettingBoolValue(defaults, @"ExtraBuildingProps", YES);
 
-    self.shadow3DSwitch.on = SettingBoolValue(defaults, @"UseShadowVolumes", NO);
+    self.shadow3DSwitch.on = SettingBoolValue(defaults, @"UseShadowVolumes", YES);
     self.shadow2DSwitch.on = SettingBoolValue(defaults, @"UseShadowDecals", YES);
     self.cloudShadowsSwitch.on = SettingBoolValue(defaults, @"UseCloudMap", NO);
     self.groundLightingSwitch.on = SettingBoolValue(defaults, @"UseLightMap", YES);
-    self.softWaterSwitch.on = SettingBoolValue(defaults, @"ShowSoftWaterEdge", YES);
+    self.softWaterSwitch.on = SettingBoolValue(defaults, @"ShowSoftWaterEdge", NO);
     self.buildingOcclusionSwitch.on = SettingBoolValue(defaults, @"BuildingOcclusion", YES);
     self.showPropsSwitch.on = SettingBoolValue(defaults, @"ShowTrees", YES);
     self.extraAnimationsSwitch.on = SettingBoolValue(defaults, @"ExtraAnimations", YES);
@@ -2388,11 +2388,11 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.zeroHourWaterSwitch.on = SettingBoolValue(values, @"WaterEffects", YES);
     self.zeroHourExtraBuildingPropsSwitch.on = SettingBoolValue(values, @"ExtraBuildingProps", YES);
 
-    self.shadow3DSwitch.on = SettingBoolValue(values, @"UseShadowVolumes", NO);
+    self.shadow3DSwitch.on = SettingBoolValue(values, @"UseShadowVolumes", YES);
     self.shadow2DSwitch.on = SettingBoolValue(values, @"UseShadowDecals", YES);
     self.cloudShadowsSwitch.on = SettingBoolValue(values, @"UseCloudMap", NO);
     self.groundLightingSwitch.on = SettingBoolValue(values, @"UseLightMap", YES);
-    self.softWaterSwitch.on = SettingBoolValue(values, @"ShowSoftWaterEdge", YES);
+    self.softWaterSwitch.on = SettingBoolValue(values, @"ShowSoftWaterEdge", NO);
     self.buildingOcclusionSwitch.on = SettingBoolValue(values, @"BuildingOcclusion", YES);
     self.showPropsSwitch.on = SettingBoolValue(values, @"ShowTrees", YES);
     self.extraAnimationsSwitch.on = SettingBoolValue(values, @"ExtraAnimations", YES);
