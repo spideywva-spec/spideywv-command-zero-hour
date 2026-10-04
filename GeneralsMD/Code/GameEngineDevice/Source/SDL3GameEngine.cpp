@@ -416,8 +416,15 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window,
 			return;
 		}
 
-		// Second finger always enters the two-finger gesture. It never
-		// starts building rotation.
+		// Building placement owns the entire touch surface. A second finger
+		// must never enter the camera's two-finger gesture while a building
+		// preview is active; the camera stays completely locked.
+		if (s_touch.phase == TouchState::BUILD_PREVIEW) {
+			return;
+		}
+
+		// Outside building placement, the second finger enters the two-finger
+		// camera gesture. It never starts building rotation.
 		if (s_touch.finger1 != 0 && id != s_touch.finger1) {
 			if (s_touch.phase == TouchState::CAMERA_PAN) {
 				sendSyntheticMouse(mouse, window,
