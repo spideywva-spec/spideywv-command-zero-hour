@@ -291,11 +291,11 @@ NSDictionary<NSString *, NSString *> *DefaultZeroHourSettings()
         @"FogEffects": @"No",
         @"WaterEffects": @"Yes",
         @"ExtraBuildingProps": @"Yes",
-        @"UseShadowVolumes": @"No",
+        @"UseShadowVolumes": @"Yes",
         @"UseShadowDecals": @"Yes",
         @"UseCloudMap": @"No",
         @"UseLightMap": @"Yes",
-        @"ShowSoftWaterEdge": @"Yes",
+        @"ShowSoftWaterEdge": @"No",
         @"BuildingOcclusion": @"Yes",
         @"ShowTrees": @"Yes",
         @"ExtraAnimations": @"Yes",
@@ -343,7 +343,7 @@ NSString *DefaultIOSIPadOverrides()
             @"  CameraPitch = 37.0\n"
             @"  EnforceMaxCameraHeight = No\n"
             @"  KeyboardScrollSpeedFactor = 1.0\n"
-            @"  TerrainDrawDistanceScale = 1.20\n"
+            @"  TerrainDrawDistanceScale = 1.35\n"
             @"  UseFPSLimit = Yes\n"
             @"  FramesPerSecondLimit = 60\n"
             @"End\n";
@@ -2432,7 +2432,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.cameraPitchSlider.value = 37.0f;
     self.enforceMaxSwitch.on = NO;
     self.scrollSpeedSlider.value = 1.0f;
-    self.drawDistanceSlider.value = 1.20f;
+    self.drawDistanceSlider.value = 1.35f;
     self.fpsLimitSwitch.on = YES;
     self.fpsSlider.value = 60.0f;
     [self settingsSliderChanged:nil];
@@ -2443,11 +2443,11 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
 {
     [self loadZeroHourSettingsControls];
     NSDictionary<NSString *, NSString *> *graphics = ReadKeyValueFile(EngineOptionsPath());
-    self.shadow3DSwitch.on = SettingBoolValue(graphics, @"UseShadowVolumes", NO);
+    self.shadow3DSwitch.on = SettingBoolValue(graphics, @"UseShadowVolumes", YES);
     self.shadow2DSwitch.on = SettingBoolValue(graphics, @"UseShadowDecals", YES);
     self.cloudShadowsSwitch.on = SettingBoolValue(graphics, @"UseCloudMap", NO);
     self.groundLightingSwitch.on = SettingBoolValue(graphics, @"UseLightMap", YES);
-    self.softWaterSwitch.on = SettingBoolValue(graphics, @"ShowSoftWaterEdge", YES);
+    self.softWaterSwitch.on = SettingBoolValue(graphics, @"ShowSoftWaterEdge", NO);
     self.buildingOcclusionSwitch.on = SettingBoolValue(graphics, @"BuildingOcclusion", YES);
     self.showPropsSwitch.on = SettingBoolValue(graphics, @"ShowTrees", YES);
     self.extraAnimationsSwitch.on = SettingBoolValue(graphics, @"ExtraAnimations", YES);
@@ -2474,7 +2474,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.cameraPitchSlider.value = 37.0f;
         self.enforceMaxSwitch.on = NO;
         self.scrollSpeedSlider.value = 1.0f;
-        self.drawDistanceSlider.value = 1.20f;
+        self.drawDistanceSlider.value = 1.35f;
         self.fpsLimitSwitch.on = YES;
         self.fpsSlider.value = 60.0f;
         self.settingsStatus.text = @"Используются настройки камеры по умолчанию.";
