@@ -155,9 +155,7 @@ struct TouchState {
 
 	float downX = 0.0f, downY = 0.0f;
 	float lastX = 0.0f, lastY = 0.0f;
-	float velocityX = 0.0f, velocityY = 0.0f;
 	Uint64 lastMotionTicks = 0;
-	bool momentumActive = false;
 	float f1x = 0.0f, f1y = 0.0f;
 	float f2x = 0.0f, f2y = 0.0f;
 
@@ -165,6 +163,7 @@ struct TouchState {
 	float lastDistance = 0.0f;
 	float gestureStartAngle = 0.0f;
 	float lastAngle = 0.0f;
+	Uint64 lastGestureTicks = 0;
 	float gestureRotationAccum = 0.0f;
 	float gestureCenterX = 0.0f;
 	float gestureCenterY = 0.0f;
@@ -187,9 +186,9 @@ constexpr float TOUCH_MOVE_EPSILON_PX = 3.0f;
 constexpr float TWO_FINGER_SLOP_PX = 10.0f;
 constexpr float ROTATION_THRESHOLD_DEGREES = 60.0f;
 constexpr float PINCH_WHEEL_SCALE = 0.035f;
-constexpr float MOMENTUM_STOP_SPEED_PX_PER_SEC = 8.0f;
-constexpr float MOMENTUM_FRICTION_PER_SEC = 5.5f;
-constexpr float MOMENTUM_MAX_SPEED_PX_PER_SEC = 5000.0f;
+constexpr float CAMERA_SPEED_SCALE = 1.0f;
+constexpr float ROTATION_SPEED_SCALE = 1.75f;
+constexpr float MIN_GESTURE_DT_SEC = 0.001f;
 
 float s_lastSyntheticX = 0.0f;
 float s_lastSyntheticY = 0.0f;
@@ -288,6 +287,7 @@ void beginTwoFingerGesture(SDL3Mouse *mouse, SDL_Window *window, int winW, int w
 	s_touch.gestureStartAngle = angleRadians(s_touch.f1x, s_touch.f1y,
 	                                          s_touch.f2x, s_touch.f2y);
 	s_touch.lastAngle = s_touch.gestureStartAngle;
+	s_touch.lastGestureTicks = SDL_GetTicks();
 	s_touch.gestureRotationAccum = 0.0f;
 	s_touch.rotationActive = false;
 	s_touch.twoFingerMoved = false;
@@ -311,10 +311,6 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 	switch (event.type) {
 	case SDL_EVENT_FINGER_DOWN:
 		if (s_touch.phase == TouchState::IDLE) {
-			s_touch.momentumActive = false;
-			s_touch.velocityX = 0.0f;
-			s_touch.velocityY = 0.0f;
-			s_touch.lastMotionTicks = SDL_GetTicks();
 			// When the game is already in building-placement mode, this finger
 			// controls the building preview. Never enter CAMERA_PAN here: the
 			// camera must remain completely locked while the preview moves.
@@ -408,15 +404,21 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		else if (s_touch.phase == TouchState::CAMERA_PAN &&
 		         event.tfinger.fingerID == s_touch.finger1) {
 			const Uint64 nowTicks = SDL_GetTicks();
-			const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
-			const float deltaX = px - s_touch.lastX;
-			const float deltaY = py - s_touch.lastY;
-			s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaX / dt));
-			s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaY / dt));
+			const float dt = SDL_max(MIN_GESTURE_DT_SEC,
+			                         (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
+			const float fingerDeltaX = px - s_touch.lastX;
+			const float fingerDeltaY = py - s_touch.lastY;
+			const float velocityX = fingerDeltaX / dt;
+			const float velocityY = fingerDeltaY / dt;
+			const float frameDt = SDL_min(dt, 1.0f / 30.0f);
+			const float cameraDeltaX = velocityX * frameDt * CAMERA_SPEED_SCALE;
+			const float cameraDeltaY = velocityY * frameDt * CAMERA_SPEED_SCALE;
 			s_touch.lastMotionTicks = nowTicks;
 			s_touch.lastX = px;
 			s_touch.lastY = py;
-			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, px, py);
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
+			                   s_lastSyntheticX + cameraDeltaX,
+			                   s_lastSyntheticY + cameraDeltaY);
 		}
 		else if (s_touch.phase == TouchState::SELECTION &&
 		         event.tfinger.fingerID == s_touch.finger1) {
@@ -436,9 +438,15 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 
 			// Continuous pinch: the wheel amount is proportional to the actual
 			// per-event distance change, not a fixed 6% step.
+			const Uint64 nowGestureTicks = SDL_GetTicks();
+			const float gestureDt = SDL_max(MIN_GESTURE_DT_SEC,
+			                                (float)(nowGestureTicks - s_touch.lastGestureTicks) * 0.001f);
+			const float gestureFrameDt = SDL_min(gestureDt, 1.0f / 30.0f);
+
 			if (s_touch.lastDistance > 1.0f) {
 				const float distanceDelta = dist - s_touch.lastDistance;
-				const float wheel = distanceDelta * PINCH_WHEEL_SCALE;
+				const float distanceVelocity = distanceDelta / gestureDt;
+				const float wheel = distanceVelocity * gestureFrameDt * PINCH_WHEEL_SCALE;
 				if (SDL_fabsf(wheel) > 0.001f) {
 					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_WHEEL,
 					                   cx, cy, 0, wheel);
@@ -464,11 +472,13 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			if (s_touch.rotationActive) {
 				// Convert angular motion into a smooth horizontal cursor delta.
 				// No snapping: every motion event is passed through.
-				const float rotationPixels = deltaAngle * (180.0f / 3.14159265358979323846f) * 1.75f;
+				const float angularVelocity = deltaAngle / gestureDt;
+				const float rotationPixels = angularVelocity * gestureFrameDt * (180.0f / 3.14159265358979323846f) * ROTATION_SPEED_SCALE;
 				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
 				                   s_touch.gestureCenterX + rotationPixels, cy);
 				s_touch.gestureCenterX += rotationPixels;
 			}
+			s_touch.lastGestureTicks = nowGestureTicks;
 		}
 		break;
 
@@ -554,14 +564,9 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			}
 			s_touch.phase = TouchState::IDLE;
 		} else if (s_touch.phase == TouchState::CAMERA_PAN) {
-			const float speed = SDL_sqrtf(s_touch.velocityX * s_touch.velocityX + s_touch.velocityY * s_touch.velocityY);
-			if (speed > MOMENTUM_STOP_SPEED_PX_PER_SEC) {
-				s_touch.momentumActive = true;
-				s_touch.phase = TouchState::IDLE;
-			} else {
-				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, px, py, SDL_BUTTON_RIGHT);
-				s_touch.phase = TouchState::IDLE;
-			}
+			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
+			                   px, py, SDL_BUTTON_RIGHT);
+			s_touch.phase = TouchState::IDLE;
 		} else if (s_touch.phase == TouchState::SELECTION) {
 			sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
 			                   px, py, SDL_BUTTON_LEFT);
@@ -570,33 +575,6 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 		break;
 	}
 	}
-}
-
-void updateTouchMomentum(SDL3Mouse *mouse, SDL_Window *window)
-{
-	if (!s_touch.momentumActive || !mouse || !window) return;
-	const float speed = SDL_sqrtf(s_touch.velocityX * s_touch.velocityX + s_touch.velocityY * s_touch.velocityY);
-	if (speed <= MOMENTUM_STOP_SPEED_PX_PER_SEC) {
-		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, s_lastSyntheticX, s_lastSyntheticY, SDL_BUTTON_RIGHT);
-		s_touch.momentumActive = false;
-		s_touch.velocityX = s_touch.velocityY = 0.0f;
-		return;
-	}
-	// Use the actual time since the previous momentum update. A fixed
-	// 1/60 timestep makes motion visibly uneven whenever iOS delivers frames
-	// faster/slower than 60 Hz.
-	const Uint64 nowTicks = SDL_GetTicks();
-	const float dt = SDL_min(0.05f, SDL_max(0.001f,
-		(float)(nowTicks - s_touch.lastMotionTicks) * 0.001f));
-	s_touch.lastMotionTicks = nowTicks;
-
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION,
-	                   s_lastSyntheticX + s_touch.velocityX * dt,
-	                   s_lastSyntheticY + s_touch.velocityY * dt);
-	// Frame-rate independent exponential friction.
-	const float decay = SDL_exp(-MOMENTUM_FRICTION_PER_SEC * dt);
-	s_touch.velocityX *= decay;
-	s_touch.velocityY *= decay;
 }
 
 void updateTouchLongPress(SDL3Mouse *mouse, SDL_Window *window)
@@ -1000,7 +978,6 @@ void SDL3GameEngine::pollSDL3Events(void)
 		SDL3Mouse* touchMouse = dynamic_cast<SDL3Mouse*>(TheMouse);
 		if (touchMouse) {
 			updateTouchLongPress(touchMouse, m_SDLWindow);
-			updateTouchMomentum(touchMouse, m_SDLWindow);
 		}
 	}
 #endif
