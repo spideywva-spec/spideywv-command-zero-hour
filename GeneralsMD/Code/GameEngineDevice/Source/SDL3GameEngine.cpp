@@ -68,21 +68,6 @@ extern GameWindowManager *TheWindowManager;
 
 // ---------------------------------------------------------------------------
 // iOS app lifecycle
-//
-// iOS suspends the process when the app leaves the foreground. Any GPU work
-// submitted around suspension stalls on drawable acquisition (MoltenVK waits
-// out a timeout per present), which surfaces as multi-second input hangs right
-// after resuming. SDL warns that lifecycle events can arrive outside the
-// normal poll cycle, so they are captured in an event watcher that fires
-// immediately on the delivering thread; the engine update loop checks the
-// flag and skips simulation + rendering while backgrounded.
-//
-// Two independent reasons to halt the render/sim loop on iOS:
-//  - BACKGROUNDED (home / switched away): the process is about to be suspended.
-//  - INACTIVE (multitasking switcher open, Control Center, a notification
-//    banner): iOS snapshots the window and owns the CAMetalLayer drawable during
-//    this window — and crucially, opening the app switcher fires resign-active
-//    WITHOUT a full background transition.
 // ---------------------------------------------------------------------------
 static std::atomic<bool> s_appBackgrounded{false};
 static std::atomic<bool> s_appInactive{false};
@@ -119,36 +104,18 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 //
 // Строго один файл. Только SDL3Mouse::addSDLEvent().
 // Никакой инерции. Отпустил палец — движение остановилось мгновенно.
-//
-// Один палец:
-//   тап без движения                -> LMB click (двойной тап = clicks=2)
-//   движение до 250 мс              -> RMB drag, карта едет за пальцем
-//   250 мс покоя, потом движение    -> LMB drag, рамка выделения
-//   250 мс покоя, потом отпускание  -> LMB click в точке удержания
-//
-// Режим стройки (TheInGameUI->getPendingPlaceType() != null):
-//   движение сразу                  -> превью за пальцем, xrel=yrel=0
-//   отпустил после движения         -> превью фиксируется, стройки нет
-//   тап < 200 мс                    -> LMB click, стройка начинается
-//   200 мс покоя                    -> LMB drag от anchor, вращение здания 360°
-//   отпустил после вращения         -> LMB up, авто-стройка
-//
-// Два пальца:
-//   pinch                           -> wheel (зум), целые тики по накопителю
-//   twist после 25°                 -> MMB drag, поворот камеры
-//   короткий синхронный шлепок      -> RMB click (отмена/сброс)
 // ---------------------------------------------------------------------------
 namespace {
 
 struct TouchState {
 	enum Phase {
 		Idle,
-		OnePending,      // палец 1, жест ещё не классифицирован
-		CameraPan,       // RMB drag, карта едет за пальцем
-		Selection,       // LMB down, рамка выделения
-		BuildPending,    // превью зафиксировано / палец на нём
-		BuildMoving,     // превью едет за пальцем
-		BuildRotate,     // LMB drag от anchor, вращение здания
+		OnePending,
+		CameraPan,
+		Selection,
+		BuildPending,
+		BuildMoving,
+		BuildRotate,
 		TwoFinger
 	};
 
@@ -183,15 +150,8 @@ float s_synthX = 0.0f;
 float s_synthY = 0.0f;
 bool  s_haveSynth = false;
 
-// Виртуальный курсор панорамы. Двигаем в противоположную сторону от
-// пальца, чтобы игра развернула RMB drag и карта поехала за пальцем.
 float s_camX = 0.0f;
 float s_camY = 0.0f;
-
-// Накопитель пинча: шлём тик колеса только когда набралось достаточно
-// пикселей. Без него wheelY получается 0.05..0.2, движок округляет его
-// до нуля и зум не срабатывает.
-float s_pinchAccum = 0.0f;
 
 constexpr Uint64 kSelectionHoldMs   = 250;
 constexpr Uint64 kBuildRotateHoldMs = 200;
@@ -201,16 +161,12 @@ constexpr Uint64 kTwoFingerTapMs    = 300;
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
-constexpr float kPinchPixelsPerTick = 20.0f;   // 20 px пинча = 1 целый тик колеса
-constexpr float kRotateThresholdDeg = 25.0f;   // порог включения поворота камеры
-constexpr float kRotatePixelsPerRad = 80.0f;   // 1 рад twist = 80 px MMB (умеренная скорость)
+constexpr float kZoomPixelsToTicks  = 3.0f;    // 1 px разницы = 3 тика колеса
+constexpr float kZoomMaxTicksPerEvt = 15.0f;   // ограничение, чтобы быстрый пинч не дёргал
+constexpr float kRotateThresholdDeg = 25.0f;
+constexpr float kRotatePixelsPerRad = 80.0f;
 constexpr float kPi = 3.14159265358979323846f;
 
-// Точная проверка режима стройки. getPendingPlaceType() возвращает
-// nullptr, когда ничего не строится. Второй проверки через getMouseCursor()
-// здесь СОЗНАТЕЛЬНО нет: в начале матча getMouseCursor() возвращает
-// BUILD_PLACEMENT по умолчанию, из-за чего обычный свайп уходил в режим
-// стройки и камера вообще не двигалась.
 static bool isBuildingPlacementMode()
 {
 	return TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr;
@@ -235,7 +191,6 @@ static float normalizedAngleDelta(float current, float previous)
 	return d;
 }
 
-// Явная отправка события с полным контролем над дельтой.
 static void sendMouseExplicit(SDL3Mouse *mouse, SDL_Window *window,
                               Uint32 type, float x, float y,
                               float xrel, float yrel,
@@ -276,7 +231,6 @@ static void sendMouseExplicit(SDL3Mouse *mouse, SDL_Window *window,
 	mouse->addSDLEvent(&event);
 }
 
-// Авто-дельта от прошлой отправленной позиции.
 static void sendMotion(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
 {
 	const float dx = s_haveSynth ? (x - s_synthX) : 0.0f;
@@ -285,7 +239,6 @@ static void sendMotion(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
 	sendMouseExplicit(mouse, window, SDL_EVENT_MOUSE_MOTION, x, y, dx, dy);
 }
 
-// Позиционирование курсора без движения камеры.
 static void sendMotionNoDelta(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
 {
 	s_synthX = x; s_synthY = y; s_haveSynth = true;
@@ -317,7 +270,6 @@ static void resetTouchState()
 	s_touch.lastTapX = ltx; s_touch.lastTapY = lty;
 	s_touch.haveLastTap = hlt;
 	s_haveSynth = false;
-	s_pinchAccum = 0.0f;
 }
 
 static void emitTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
@@ -351,16 +303,12 @@ static void releaseAllButtons(SDL3Mouse *mouse, SDL_Window *window)
 		sendBtnUp(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_LEFT);
 		break;
 	case TouchState::BuildRotate:
-		// Вращение здания в Zero Hour — LMB drag от anchor.
 		sendBtnUp(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_LEFT);
 		break;
 	default: break;
 	}
 }
 
-// Пофреймовая проверка удержания 200 мс для вращения здания.
-// Палец, стоящий на месте, не генерирует SDL-события — без этого
-// вызова вращение никогда не включится.
 static void updateTouchHold(SDL3Mouse *mouse, SDL_Window *window)
 {
 	if (!mouse || !window) return;
@@ -369,9 +317,6 @@ static void updateTouchHold(SDL3Mouse *mouse, SDL_Window *window)
 	if (s_touch.firstFingerMoved) return;
 	if ((SDL_GetTicks() - s_touch.downTicks) < kBuildRotateHoldMs) return;
 
-	// Удержание 200 мс без движения по зафиксированному превью —
-	// включаем вращение здания. LMB down в точке превью; движок
-	// (PlaceEventTranslator) сам начнёт считать угол от anchor.
 	s_touch.phase = TouchState::BuildRotate;
 	s_touch.lastX = s_touch.downX;
 	s_touch.lastY = s_touch.downY;
@@ -390,7 +335,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 	const float x = event.tfinger.x * static_cast<float>(width);
 	const float y = event.tfinger.y * static_cast<float>(height);
 
-	// Отмена: отпускаем кнопки, никаких кликов, фиксированное превью не теряем.
 	if (event.type == SDL_EVENT_FINGER_CANCELED) {
 		const bool keepBuildPending = (s_touch.phase == TouchState::BuildPending ||
 		                               s_touch.phase == TouchState::BuildMoving);
@@ -404,12 +348,10 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 	switch (event.type) {
 
-	// ================= КАСАНИЕ =================
 	case SDL_EVENT_FINGER_DOWN:
 	{
 		const SDL_FingerID id = event.tfinger.fingerID;
 
-		// Первое касание — определяем режим.
 		if (s_touch.phase == TouchState::Idle) {
 			s_touch.finger1 = id;
 			s_touch.downX = s_touch.lastX = x;
@@ -425,8 +367,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// Превью зафиксировано, палец отпущен. Следующее касание —
-		// по превью: тап → стройка, удержание 200 мс → вращение.
 		if (s_touch.phase == TouchState::BuildPending && s_touch.finger1 == 0) {
 			s_touch.finger1 = id;
 			s_touch.downX = s_touch.lastX = x;
@@ -439,7 +379,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// Второй палец — двухпальцевый жест.
 		if (s_touch.finger1 != 0 && id != s_touch.finger1 && s_touch.finger2 == 0) {
 			releaseAllButtons(mouse, window);
 
@@ -454,14 +393,12 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.pinchMoved = false;
 			s_touch.rotationArmed = false;
 			s_touch.rotationAccum = 0.0f;
-			s_pinchAccum = 0.0f;
 			s_touch.phase = TouchState::TwoFinger;
 			return;
 		}
 		return;
 	}
 
-	// ================= ДВИЖЕНИЕ =================
 	case SDL_EVENT_FINGER_MOTION:
 	{
 		const SDL_FingerID id = event.tfinger.fingerID;
@@ -482,22 +419,21 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			const float cx = (s_touch.f1x + s_touch.f2x) * 0.5f * (float)width;
 			const float cy = (s_touch.f1y + s_touch.f2y) * 0.5f * (float)height;
 
-			// Зум через накопитель: копим пиксели пинча и шлём целые тики
-			// колеса. Целый тик = wheelY 1.0 = wheelPos 120 после SDL3Mouse,
-			// что движок воспринимает как один «щелчок» зума.
-			s_pinchAccum += distDelta;
-			while (s_pinchAccum >= kPinchPixelsPerTick) {
+			// Зум. Каждый пиксель изменения расстояния между пальцами
+			// даёт 3 тика колеса. В SDL3Mouse тик превращается в
+			// wheelPos = wheelY * 120, и движок видит нормальное
+			// значение вместо округлённого до нуля.
+			// Ограничение ±15 тиков на одно событие — быстрый пинч не
+			// дёргает камеру, медленный — плавно двигает.
+			if (SDL_fabsf(distDelta) > 0.05f) {
 				s_touch.pinchMoved = true;
-				sendWheel(mouse, window, cx, cy, 1.0f);
-				s_pinchAccum -= kPinchPixelsPerTick;
-			}
-			while (s_pinchAccum <= -kPinchPixelsPerTick) {
-				s_touch.pinchMoved = true;
-				sendWheel(mouse, window, cx, cy, -1.0f);
-				s_pinchAccum += kPinchPixelsPerTick;
+				float wheelY = distDelta * kZoomPixelsToTicks;
+				if (wheelY >  kZoomMaxTicksPerEvt) wheelY =  kZoomMaxTicksPerEvt;
+				if (wheelY < -kZoomMaxTicksPerEvt) wheelY = -kZoomMaxTicksPerEvt;
+				sendWheel(mouse, window, cx, cy, wheelY);
 			}
 
-			// Поворот камеры включается только после порога.
+			// Поворот камеры включается только после порога 25°.
 			if (!s_touch.rotationArmed) {
 				s_touch.rotationAccum += angleDelta;
 				const float deg = SDL_fabsf(s_touch.rotationAccum) * (180.0f / kPi);
@@ -508,7 +444,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 					sendBtnDown(mouse, window, cx, cy, SDL_BUTTON_MIDDLE);
 				}
 			} else if (SDL_fabsf(angleDelta) > 0.0001f) {
-				// kRotatePixelsPerRad = 80 — умеренная скорость поворота.
 				const float shift = angleDelta * kRotatePixelsPerRad;
 				const float newX = s_synthX + shift;
 				sendMotion(mouse, window, newX, s_synthY);
@@ -538,7 +473,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 		if (s_touch.phase == TouchState::BuildRotate) {
-			// LMB drag от anchor: реальная дельта считается из s_synthX/Y.
 			sendMotion(mouse, window, x, y);
 			s_touch.lastX = x; s_touch.lastY = y;
 			return;
@@ -549,7 +483,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			const float dx = x - s_touch.downX, dy = y - s_touch.downY;
 			if (SDL_sqrtf(dx*dx + dy*dy) < kMoveDeadzonePx) return;
 
-			// Перепроверка: игра могла войти в режим стройки прямо сейчас.
 			if (isBuildingPlacementMode()) {
 				s_touch.firstFingerMoved = true;
 				s_touch.phase = TouchState::BuildMoving;
@@ -562,7 +495,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.firstFingerMoved = true;
 
 			if (held >= kSelectionHoldMs) {
-				// Палец стоял 250 мс, теперь поехал — рамка выделения.
 				s_touch.phase = TouchState::Selection;
 				s_touch.lastX = s_touch.downX; s_touch.lastY = s_touch.downY;
 				sendMotionNoDelta(mouse, window, s_touch.downX, s_touch.downY);
@@ -570,11 +502,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 				s_touch.lastX = x; s_touch.lastY = y;
 				sendMotion(mouse, window, x, y);
 			} else {
-				// Раннее движение — панорама камеры. Виртуальный курсор
-				// двигаем ПРОТИВОПОЛОЖНО пальцу, чтобы игра развернула
-				// RMB drag и карта поехала за рукой. Первое смещение
-				// применяем сразу, иначе курсор прыгает из якоря в точку
-				// пальца и движок теряет anchor.
 				s_touch.phase = TouchState::CameraPan;
 				s_touch.lastX = s_touch.downX; s_touch.lastY = s_touch.downY;
 				s_camX = s_touch.downX; s_camY = s_touch.downY;
@@ -591,7 +518,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// --- Панорама камеры. Палец вправо → курсор влево → карта за пальцем. ---
 		if (s_touch.phase == TouchState::CameraPan) {
 			const float dx = x - s_touch.lastX;
 			const float dy = y - s_touch.lastY;
@@ -604,7 +530,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// --- Рамка выделения ---
 		if (s_touch.phase == TouchState::Selection) {
 			sendMotion(mouse, window, x, y);
 			s_touch.lastX = x; s_touch.lastY = y;
@@ -613,12 +538,10 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 		return;
 	}
 
-	// ================= ОТПУСКАНИЕ =================
 	case SDL_EVENT_FINGER_UP:
 	{
 		const SDL_FingerID id = event.tfinger.fingerID;
 
-		// --- Два пальца ---
 		if (s_touch.phase == TouchState::TwoFinger) {
 			if (id == s_touch.finger1) s_touch.finger1 = 0;
 			else if (id == s_touch.finger2) s_touch.finger2 = 0;
@@ -645,18 +568,13 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 		if (id != s_touch.finger1) return;
 
-		// --- Режим стройки: конец вращения = авто-стройка ---
 		if (s_touch.phase == TouchState::BuildRotate) {
-			// LMB up завершает PlaceEventTranslator и здание строится
-			// по текущему углу. Никаких дополнительных кликов — иначе
-			// движок получит двойное событие и отменит постройку.
 			sendMotionNoDelta(mouse, window, x, y);
 			sendBtnUp(mouse, window, x, y, SDL_BUTTON_LEFT);
 			resetTouchState();
 			return;
 		}
 
-		// --- Режим стройки: превью ехало, отпустили — фиксация ---
 		if (s_touch.phase == TouchState::BuildMoving) {
 			s_touch.finger1 = 0;
 			s_touch.firstFingerMoved = false;
@@ -664,7 +582,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// --- Режим стройки: тап по превью = стройка ---
 		if (s_touch.phase == TouchState::BuildPending) {
 			const Uint64 held = SDL_GetTicks() - s_touch.downTicks;
 			if (held < kBuildRotateHoldMs && !s_touch.firstFingerMoved) {
@@ -673,29 +590,24 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 				sendBtnUp  (mouse, window, x, y, SDL_BUTTON_LEFT);
 				resetTouchState();
 			} else {
-				// Палец ушёл без движения, но после 200 мс — превью
-				// остаётся на месте, готово к следующему касанию.
 				s_touch.finger1 = 0;
 				s_touch.firstFingerMoved = false;
 			}
 			return;
 		}
 
-		// --- Панорама камеры ---
 		if (s_touch.phase == TouchState::CameraPan) {
 			sendBtnUp(mouse, window, s_camX, s_camY, SDL_BUTTON_RIGHT);
 			resetTouchState();
 			return;
 		}
 
-		// --- Рамка выделения ---
 		if (s_touch.phase == TouchState::Selection) {
 			sendBtnUp(mouse, window, x, y, SDL_BUTTON_LEFT);
 			resetTouchState();
 			return;
 		}
 
-		// --- Один палец, тап без движения ---
 		if (s_touch.phase == TouchState::OnePending) {
 			if (!s_touch.firstFingerMoved) {
 				emitTap(mouse, window, s_touch.downX, s_touch.downY);
@@ -715,9 +627,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 namespace {
 
-// Enter on an iOS soft keyboard must dismiss the IME and must not be
-// immediately restarted by updateTextInputState() while the same entry field
-// still owns focus. This flag is intentionally kept in this .cpp only.
 static bool s_textInputDismissedForCurrentFocus = false;
 
 Bool DecodeNextUtf8Codepoint(const char* text, size_t length, size_t& offset, UnsignedInt& outCodepoint)
@@ -774,9 +683,6 @@ Bool DecodeNextUtf8Codepoint(const char* text, size_t length, size_t& offset, Un
 
 }
 
-/**
- * Constructor: Initialize SDL3 game engine state
- */
 SDL3GameEngine::SDL3GameEngine()
 	: GameEngine(),
 	  m_SDLWindow(nullptr),
@@ -788,9 +694,6 @@ SDL3GameEngine::SDL3GameEngine()
 	fprintf(stderr, "DEBUG: SDL3GameEngine::SDL3GameEngine() created\n");
 }
 
-/**
- * Destructor: Cleanup SDL3 resources
- */
 SDL3GameEngine::~SDL3GameEngine()
 {
 	if (m_SDLWindow && m_IsTextInputActive) {
@@ -805,9 +708,6 @@ SDL3GameEngine::~SDL3GameEngine()
 	fprintf(stderr, "DEBUG: SDL3GameEngine::~SDL3GameEngine() destroyed\n");
 }
 
-/**
- * From GameEngine: init() - initialize subsystems
- */
 void SDL3GameEngine::init(void)
 {
 	fprintf(stderr, "INFO: SDL3GameEngine::init() starting\n");
@@ -846,9 +746,6 @@ void SDL3GameEngine::init(void)
 	GameEngine::init();
 }
 
-/**
- * From GameEngine: reset() - reset system to starting state
- */
 void SDL3GameEngine::reset(void)
 {
 	s_textInputDismissedForCurrentFocus = false;
@@ -861,9 +758,6 @@ void SDL3GameEngine::reset(void)
 	GameEngine::reset();
 }
 
-/**
- * From GameEngine: update() - per-frame update
- */
 void SDL3GameEngine::update(void)
 {
 	pollSDL3Events();
@@ -876,9 +770,6 @@ void SDL3GameEngine::update(void)
 	GameEngine::update();
 }
 
-/**
- * From GameEngine: execute() - main game loop
- */
 void SDL3GameEngine::execute(void)
 {
 	fprintf(stderr, "INFO: SDL3GameEngine::execute() - entering main loop\n");
@@ -886,33 +777,21 @@ void SDL3GameEngine::execute(void)
 	fprintf(stderr, "INFO: SDL3GameEngine::execute() - exited main loop\n");
 }
 
-/**
- * From GameEngine: serviceWindowsOS() - native OS service
- */
 void SDL3GameEngine::serviceWindowsOS(void)
 {
 	pollSDL3Events();
 }
 
-/**
- * Check if game has OS focus
- */
 Bool SDL3GameEngine::isActive(void)
 {
 	return m_IsActive;
 }
 
-/**
- * Set OS focus status
- */
 void SDL3GameEngine::setIsActive(Bool isActive)
 {
 	m_IsActive = isActive;
 }
 
-/**
- * Poll and process SDL3 events
- */
 void SDL3GameEngine::pollSDL3Events(void)
 {
 	if (!m_SDLWindow) {
@@ -1047,9 +926,6 @@ void SDL3GameEngine::pollSDL3Events(void)
 	}
 
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-	// Пофреймовая проверка удержания 200 мс для вращения здания.
-	// Палец, стоящий на месте, не генерирует SDL-события — без этого
-	// вызова вращение никогда не включится.
 	if (TheMouse && m_SDLWindow) {
 		SDL3Mouse* touchMouse = dynamic_cast<SDL3Mouse*>(TheMouse);
 		if (touchMouse) {
@@ -1059,7 +935,6 @@ void SDL3GameEngine::pollSDL3Events(void)
 #endif
 }
 
-// GeneralsX @bugfix felipebraz 01/04/2026 Enable SDL text input only while an entry gadget owns focus.
 void SDL3GameEngine::updateTextInputState(void)
 {
 	if (!m_SDLWindow || !TheWindowManager) {
@@ -1095,7 +970,6 @@ void SDL3GameEngine::updateTextInputState(void)
 	}
 }
 
-// GeneralsX @bugfix felipebraz 01/04/2026 Forward SDL UTF-8 text input through existing GWM_IME_CHAR path.
 void SDL3GameEngine::forwardTextInputEvent(const char* utf8Text)
 {
 	if (!utf8Text || !TheWindowManager) {
@@ -1132,9 +1006,6 @@ void SDL3GameEngine::forwardTextInputEvent(const char* utf8Text)
 	}
 }
 
-/**
- * Handle keyboard event - dispatch to Keyboard manager
- */
 void SDL3GameEngine::handleKeyboardEvent(const SDL_KeyboardEvent& event)
 {
 	if (TheKeyboard) {
@@ -1145,9 +1016,6 @@ void SDL3GameEngine::handleKeyboardEvent(const SDL_KeyboardEvent& event)
 	}
 }
 
-/**
- * Handle mouse motion event - dispatch to Mouse manager
- */
 void SDL3GameEngine::handleMouseMotionEvent(const SDL_MouseMotionEvent& event)
 {
 	if (TheMouse) {
@@ -1158,9 +1026,6 @@ void SDL3GameEngine::handleMouseMotionEvent(const SDL_MouseMotionEvent& event)
 	}
 }
 
-/**
- * Handle mouse button event - dispatch to Mouse manager
- */
 void SDL3GameEngine::handleMouseButtonEvent(const SDL_MouseButtonEvent& event)
 {
 	if (TheMouse) {
@@ -1171,9 +1036,6 @@ void SDL3GameEngine::handleMouseButtonEvent(const SDL_MouseButtonEvent& event)
 	}
 }
 
-/**
- * Handle mouse wheel event - dispatch to Mouse manager
- */
 void SDL3GameEngine::handleMouseWheelEvent(const SDL_MouseWheelEvent& event)
 {
 	if (TheMouse) {
@@ -1184,17 +1046,10 @@ void SDL3GameEngine::handleMouseWheelEvent(const SDL_MouseWheelEvent& event)
 	}
 }
 
-/**
- * Handle window event (resize, etc.)
- */
 void SDL3GameEngine::handleWindowEvent(const SDL_WindowEvent& event)
 {
 	// TODO: Phase 2 - Handle window resize, notify graphics subsystem
 }
-
-/**
- * Factory Methods for GameEngine subsystems
- */
 
 LocalFileSystem *SDL3GameEngine::createLocalFileSystem(void)
 {
