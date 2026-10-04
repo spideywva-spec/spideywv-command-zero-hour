@@ -125,6 +125,7 @@ struct TouchState {
 
 	float downX = 0.0f, downY = 0.0f;
 	float lastX = 0.0f, lastY = 0.0f;
+	// Храним нормализованные координаты пальцев (0..1).
 	float f1x = 0.0f, f1y = 0.0f;
 	float f2x = 0.0f, f2y = 0.0f;
 
@@ -136,6 +137,7 @@ struct TouchState {
 
 	bool firstFingerMoved = false;
 
+	// Расстояние между пальцами в ПИКСЕЛЯХ окна (не нормализованное).
 	float pinchCurrentDistance = 0.0f;
 	float pinchCurrentAngle = 0.0f;
 	bool  pinchMoved = false;
@@ -153,6 +155,11 @@ bool  s_haveSynth = false;
 float s_camX = 0.0f;
 float s_camY = 0.0f;
 
+// Накопитель пинча в пикселях. Считаем реальное расстояние между
+// пальцами в пикселях окна (а не в нормализованных 0..1, как раньше),
+// поэтому wheelY будет в разумных единицах, а не 0.0003.
+float s_pinchAccum = 0.0f;
+
 constexpr Uint64 kSelectionHoldMs   = 250;
 constexpr Uint64 kBuildRotateHoldMs = 200;
 constexpr Uint64 kDoubleTapMs       = 300;
@@ -161,7 +168,7 @@ constexpr Uint64 kTwoFingerTapMs    = 300;
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
-constexpr float kPinchWheelScale    = 0.035f;  // зум: пиксели пинча × scale = wheelY
+constexpr float kPinchPxPerTick     = 15.0f;  // 15 px изменения дистанции = 1 тик колеса
 constexpr float kRotateThresholdDeg = 25.0f;
 constexpr float kRotatePixelsPerRad = 80.0f;
 constexpr float kPi = 3.14159265358979323846f;
@@ -171,9 +178,12 @@ static bool isBuildingPlacementMode()
 	return TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr;
 }
 
-static float touchDistance(float x1, float y1, float x2, float y2)
+// Расстояние между двумя точками в ПИКСЕЛЯХ окна. Принимает
+// нормализованные координаты (0..1) и размеры окна.
+static float touchDistancePx(float x1, float y1, float x2, float y2, int w, int h)
 {
-	const float dx = x1 - x2, dy = y1 - y2;
+	const float dx = (x1 - x2) * static_cast<float>(w);
+	const float dy = (y1 - y2) * static_cast<float>(h);
 	return SDL_sqrtf(dx*dx + dy*dy);
 }
 
@@ -269,6 +279,7 @@ static void resetTouchState()
 	s_touch.lastTapX = ltx; s_touch.lastTapY = lty;
 	s_touch.haveLastTap = hlt;
 	s_haveSynth = false;
+	s_pinchAccum = 0.0f;
 }
 
 static void emitTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
@@ -385,13 +396,15 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.f2x = event.tfinger.x;
 			s_touch.f2y = event.tfinger.y;
 			s_touch.twoFingerDownTicks = SDL_GetTicks();
+			// Нормализованные координаты + размеры окна = реальное расстояние в пикселях.
 			s_touch.pinchCurrentDistance =
-				touchDistance(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y);
+				touchDistancePx(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y, width, height);
 			s_touch.pinchCurrentAngle =
 				touchAngle(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y);
 			s_touch.pinchMoved = false;
 			s_touch.rotationArmed = false;
 			s_touch.rotationAccum = 0.0f;
+			s_pinchAccum = 0.0f;
 			s_touch.phase = TouchState::TwoFinger;
 			return;
 		}
@@ -408,7 +421,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 		// --- Два пальца: зум и поворот ---
 		if (s_touch.phase == TouchState::TwoFinger) {
-			const float dist  = touchDistance(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y);
+			const float dist  = touchDistancePx(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y, width, height);
 			const float angle = touchAngle(s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y);
 			const float distDelta  = dist - s_touch.pinchCurrentDistance;
 			const float angleDelta = normalizedAngleDelta(angle, s_touch.pinchCurrentAngle);
@@ -418,14 +431,19 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			const float cx = (s_touch.f1x + s_touch.f2x) * 0.5f * (float)width;
 			const float cy = (s_touch.f1y + s_touch.f2y) * 0.5f * (float)height;
 
-			// Зум. Пиксели изменения расстояния между пальцами умножаются
-			// на kPinchWheelScale и превращаются в wheelY. В SDL3Mouse это
-			// значение умножается на MOUSE_WHEEL_DELTA=120 → wheelPos.
-			// Чем быстрее двигаются пальцы, тем больше distDelta за кадр
-			// и тем быстрее зум. Медленное движение — плавный медленный зум.
-			if (SDL_fabsf(distDelta) > 0.5f) {
+			// Зум через накопитель пикселей. 15 px изменения расстояния
+			// между пальцами = 1 целый тик колеса. В SDL3Mouse тик
+			// превращается в wheelPos = 120, движок видит нормальный зум.
+			s_pinchAccum += distDelta;
+			while (s_pinchAccum >= kPinchPxPerTick) {
 				s_touch.pinchMoved = true;
-				sendWheel(mouse, window, cx, cy, distDelta * kPinchWheelScale);
+				sendWheel(mouse, window, cx, cy, 1.0f);
+				s_pinchAccum -= kPinchPxPerTick;
+			}
+			while (s_pinchAccum <= -kPinchPxPerTick) {
+				s_touch.pinchMoved = true;
+				sendWheel(mouse, window, cx, cy, -1.0f);
+				s_pinchAccum += kPinchPxPerTick;
 			}
 
 			// Поворот камеры включается только после порога 25°.
