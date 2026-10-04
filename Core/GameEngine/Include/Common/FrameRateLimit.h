@@ -31,7 +31,6 @@ public:
 private:
 	Int64 m_freq;
 	Int64 m_start;
-	Int64 m_nextDeadline;
 };
 
 
