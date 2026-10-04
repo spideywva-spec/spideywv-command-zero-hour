@@ -155,6 +155,7 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 	m_start = tickValue;
 	return static_cast<Real>(elapsedSeconds);
 #endif
+#endif
 }
 
 
