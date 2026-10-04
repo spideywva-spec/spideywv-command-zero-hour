@@ -27,7 +27,6 @@
 
 FrameRateLimit::FrameRateLimit()
 {
-	m_nextDeadline = 0;
 #ifdef _WIN32
 	LARGE_INTEGER freq;
 	LARGE_INTEGER start;
@@ -94,44 +93,35 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 	m_start = tick.QuadPart;
 	return (Real)elapsedSeconds;
 #else
-	// Keep an absolute frame deadline so scheduler wake-up jitter does not
-	// accumulate into visible frame-time wobble.
+	// iOS/Unix: pace each frame relative to the time spent rendering it.
+	// Do not use absolute frame slots here: if one frame runs slightly over
+	// 16.67 ms, skipping the next slot creates a visible 60 -> 30 FPS cadence.
 	struct timespec tick;
 	clock_gettime(CLOCK_MONOTONIC, &tick);
 	Int64 tickValue = static_cast<Int64>(tick.tv_sec) * 1000000000 + tick.tv_nsec;
-	const Int64 targetNanoseconds = static_cast<Int64>(1000000000ULL / maxFps);
+	double elapsedSeconds = static_cast<double>(tickValue - m_start) / static_cast<double>(m_freq);
+	const double targetSeconds = 1.0 / static_cast<double>(maxFps);
+	const double sleepSeconds = targetSeconds - elapsedSeconds - 0.001; // leave ~1ms for final precision wait
 
-	if (m_nextDeadline == 0)
-		m_nextDeadline = tickValue;
-
-	m_nextDeadline += targetNanoseconds;
-
-	// If rendering falls behind, advance to the next future slot instead of
-	// generating a burst of catch-up frames.
-	while (m_nextDeadline <= tickValue)
-		m_nextDeadline += targetNanoseconds;
-
-	const Int64 sleepNanoseconds = m_nextDeadline - tickValue - 1000000; // 1 ms precision window
-	if (sleepNanoseconds > 0)
+	if (sleepSeconds > 0.0)
 	{
 		struct timespec sleepTime;
-		sleepTime.tv_sec = static_cast<time_t>(sleepNanoseconds / 1000000000);
-		sleepTime.tv_nsec = static_cast<long>(sleepNanoseconds % 1000000000);
+		sleepTime.tv_sec = static_cast<time_t>(sleepSeconds);
+		sleepTime.tv_nsec = static_cast<long>((sleepSeconds - sleepTime.tv_sec) * 1000000000.0);
 		nanosleep(&sleepTime, nullptr);
 	}
 
-	// Precise final 1 ms wait.
+	// Final short wait avoids coarse scheduler jitter without dropping a frame.
 	do
 	{
 		clock_gettime(CLOCK_MONOTONIC, &tick);
 		tickValue = static_cast<Int64>(tick.tv_sec) * 1000000000 + tick.tv_nsec;
+		elapsedSeconds = static_cast<double>(tickValue - m_start) / static_cast<double>(m_freq);
 	}
-	while (tickValue < m_nextDeadline);
+	while (elapsedSeconds < targetSeconds);
 
-	const double elapsedSeconds = static_cast<double>(tickValue - m_start) / static_cast<double>(m_freq);
 	m_start = tickValue;
-	return static_cast<Real>(elapsedSeconds);
-#endif
+	return static_cast<Real>(elapsedSeconds);#endif
 }
 
 
