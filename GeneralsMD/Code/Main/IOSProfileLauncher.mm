@@ -2209,10 +2209,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
 }
 - (void)saveНастройки
 {
-    // Single save path for launcher settings:
-    // - ZeroHourSettings.ini stays the separate launcher/profile file.
-    // - Options.ini is the live engine settings file.
-    // - iOSIPadOverrides.ini remains the engine-specific camera/FPS bridge.
+    // Единый путь сохранения:
+    // iOSIPadOverrides.ini = камера/FPS, ZeroHourSettings.ini = UI лаунчера,
+    // Options.ini = реальный файл, который читает движок.
     EnsureGameRootDirectory();
 
     NSString *iosOverrides =
@@ -2222,7 +2221,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
              "  MinCameraHeight = %.1f\n"
              "  CameraPitch = %.1f\n"
              "  EnforceMaxCameraHeight = %@\n"
-             "  KeyboardScrollSpeedFactor = %.2f\n"
+             "  KeyboardScrollSpeedFactor = %.1f\n"
              "  TerrainDrawDistanceScale = %.2f\n"
              "  UseFPSLimit = %@\n"
              "  FramesPerSecondLimit = %.0f\n"
@@ -2251,13 +2250,18 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSString *portraits = @[@"Standard", @"Funny"][MAX(0, MIN(1, self.zeroHourPortraitsSegment.selectedSegmentIndex))];
 
     NSInteger textureReduction = MAX(0, MIN(2, self.textureQualitySegment.selectedSegmentIndex));
-    NSInteger particleCount = self.particleQualitySegment.selectedSegmentIndex <= 0
-        ? 1200
-        : (self.particleQualitySegment.selectedSegmentIndex >= 2 ? 4000 : 2500);
-    NSString *textureFilter = @[@"Bilinear", @"Trilinear", @"Anisotropic"][MAX(0, MIN(2, self.textureFilterSegment.selectedSegmentIndex))];
+    NSInteger particleIndex = MAX(0, MIN(2, self.particleQualitySegment.selectedSegmentIndex));
+    NSInteger particleCount = particleIndex == 0 ? 1000 : (particleIndex == 2 ? 5000 : 2500);
+
+    NSArray<NSString *> *filters = @[@"Bilinear", @"Trilinear", @"Anisotropic"];
+    NSString *textureFilter = filters[MAX(0, MIN(2, self.textureFilterSegment.selectedSegmentIndex))];
+    NSArray<NSString *> *anisotropyLevels = @[@"2", @"4", @"8", @"16"];
+    NSString *anisotropy = anisotropyLevels[MAX(0, MIN(3, self.anisotropySegment.selectedSegmentIndex))];
+    NSArray<NSString *> *msaaLevels = @[@"0", @"2", @"4", @"8"];
+    NSString *antiAliasing = msaaLevels[MAX(0, MIN(3, self.msaaSegment.selectedSegmentIndex))];
 
     NSDictionary<NSString *, NSString *> *zeroHourValues = @{
-        @"AnisotropyLevel": @"8",
+        @"AnisotropyLevel": anisotropy,
         @"BuildingOcclusion": self.buildingOcclusionSwitch.on ? @"Yes" : @"No",
         @"Cameos": cameos,
         @"ControlBar": controlBar,
@@ -2284,66 +2288,40 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         @"UseLightMap": self.groundLightingSwitch.on ? @"Yes" : @"No",
         @"UseShadowDecals": self.shadow2DSwitch.on ? @"Yes" : @"No",
         @"UseShadowVolumes": self.shadow3DSwitch.on ? @"Yes" : @"No",
-        @"WaterEffects": self.zeroHourWaterSwitch.on ? @"Yes" : @"No"
+        @"WaterEffects": self.zeroHourWaterSwitch.on ? @"Yes" : @"No",
+        @"AntiAliasing": antiAliasing
     };
 
     NSError *zeroHourError = nil;
     BOOL zeroHourOK = WriteKeyValueFile(ZeroHourSettingsPath(), zeroHourValues, &zeroHourError);
 
-    // Seed every key controlled by this launcher before reading the existing file.
-    // Thus missing/empty/old Options.ini can never suppress a launcher setting.
-    NSMutableDictionary<NSString *, NSString *> *gameOptions = [NSMutableDictionary dictionaryWithDictionary:@{
-        @"UseShadowVolumes": @"No",
-        @"UseShadowDecals": @"Yes",
-        @"UseCloudMap": @"No",
-        @"UseLightMap": @"Yes",
-        @"FogEffects": @"No",
-        @"ShowSoftWaterEdge": @"Yes",
-        @"ShowTrees": @"Yes",
-        @"ExtraAnimations": @"Yes",
-        @"DynamicLOD": @"No",
-        @"HeatEffects": @"No",
-        @"TextureReduction": @"0",
-        @"TextureReductionFactor": @"0",
-        @"MaxParticleCount": @"2500",
-        @"FPSLimit": @"yes",
-        @"UseFPSLimit": @"yes",
-        @"FramesPerSecondLimit": @"60",
-        @"TextureFilter": @"Anisotropic",
-        @"AnisotropyLevel": @"8",
-        @"FPSLimit": @"yes",
-        @"UseFPSLimit": @"yes",
-        @"FramesPerSecondLimit": @"60",
-        @"MaxCameraHeight": @"550.0",
-        @"MinCameraHeight": @"70.0",
-        @"CameraPitch": @"37.0",
-        @"TerrainDrawDistanceScale": @"1.20",
-        @"ScrollFactor": @"100"
-    }];
+    // Это рабочая схема upstream: читаем существующий Options.ini,
+    // сохраняем несвязанные ключи и перезаписываем только настройки лаунчера.
+    NSMutableDictionary<NSString *, NSString *> *gameOptions =
+        [ReadKeyValueFile(GameOptionsPath()) mutableCopy];
 
-    // Preserve unrelated engine options only. Every launcher-controlled key is
-    // overwritten below with the current UI value, so stale Options.ini values
-    // cannot win over the launcher.
-    [gameOptions addEntriesFromDictionary:ReadKeyValueFile(GameOptionsPath())];
-
-    gameOptions[@"UseShadowVolumes"] = self.shadow3DSwitch.on ? @"yes" : @"no";
-    gameOptions[@"UseShadowDecals"] = self.shadow2DSwitch.on ? @"yes" : @"no";
-    gameOptions[@"UseCloudMap"] = self.cloudShadowsSwitch.on ? @"yes" : @"no";
-    gameOptions[@"UseLightMap"] = self.groundLightingSwitch.on ? @"yes" : @"no";
-    gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"yes" : @"no";
-    gameOptions[@"ShowSoftWaterEdge"] = self.softWaterSwitch.on ? @"yes" : @"no";
-    gameOptions[@"ShowTrees"] = self.showPropsSwitch.on ? @"yes" : @"no";
-    gameOptions[@"ExtraAnimations"] = self.extraAnimationsSwitch.on ? @"yes" : @"no";
-    gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"yes" : @"no";
-    gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"yes" : @"no";
+    gameOptions[@"IdealStaticGameLOD"] = @"High";
+    gameOptions[@"StaticGameLOD"] = @"Custom";
+    gameOptions[@"UseShadowVolumes"] = self.shadow3DSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"UseShadowDecals"] = self.shadow2DSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"UseCloudMap"] = self.cloudShadowsSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"UseLightMap"] = self.groundLightingSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"ShowSoftWaterEdge"] = self.softWaterSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"BuildingOcclusion"] = self.buildingOcclusionSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"ShowTrees"] = self.showPropsSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"ExtraAnimations"] = self.extraAnimationsSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"Yes" : @"No";
+    gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"Yes" : @"No";
     gameOptions[@"TextureReduction"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
     gameOptions[@"TextureReductionFactor"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
     gameOptions[@"MaxParticleCount"] = [NSString stringWithFormat:@"%ld", (long)particleCount];
     gameOptions[@"TextureFilter"] = textureFilter;
-    gameOptions[@"AnisotropyLevel"] = @"8";
+    gameOptions[@"AnisotropyLevel"] = anisotropy;
+    gameOptions[@"AntiAliasing"] = antiAliasing;
     gameOptions[@"FPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
-    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%ld", lroundf(self.fpsSlider.value)];
+    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
     gameOptions[@"MaxCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.maxCameraSlider.value];
     gameOptions[@"MinCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.minCameraSlider.value];
     gameOptions[@"CameraPitch"] = [NSString stringWithFormat:@"%.1f", self.cameraPitchSlider.value];
@@ -2351,17 +2329,16 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(self.scrollSpeedSlider.value * 100.0f)];
 
     NSError *optionsError = nil;
-    NSString *liveOptionsPath = GameOptionsPath();
-    BOOL optionsOK = WriteKeyValueFile(liveOptionsPath, gameOptions, &optionsError);
+    BOOL optionsOK = WriteKeyValueFile(GameOptionsPath(), gameOptions, &optionsError);
 
-    // Keep the same Options.ini content available in Documents/Files.
+    // Копия для Files/лаунчера. Игра читает основной Options.ini выше.
     NSError *documentsOptionsError = nil;
     BOOL documentsOptionsOK = WriteKeyValueFile(DocumentsOptionsPath(), gameOptions, &documentsOptionsError);
 
     if (optionsOK && documentsOptionsOK)
     {
         fprintf(stderr, "INFO: iOS launcher Options.ini saved: %s\n",
-                liveOptionsPath.fileSystemRepresentation);
+                GameOptionsPath().fileSystemRepresentation);
         fprintf(stderr, "INFO: iOS launcher Options.ini mirror saved: %s\n",
                 DocumentsOptionsPath().fileSystemRepresentation);
     }
@@ -2370,7 +2347,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     {
         self.settingsStatus.text = @"✓ Настройки сохранены. ZeroHourSettings.ini + Options.ini синхронизированы.";
         self.settingsStatus.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.48 alpha:1.0];
-        fprintf(stderr, "INFO: iOS launcher settings saved successfully; ZeroHourSettings.ini and Options.ini synchronized\n");
+        fprintf(stderr, "INFO: iOS launcher settings saved successfully using upstream Options.ini flow\n");
     }
     else
     {
