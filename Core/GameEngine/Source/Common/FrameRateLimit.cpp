@@ -23,6 +23,10 @@
 #ifndef _WIN32
 #include <time.h>    // clock_gettime, nanosleep
 #include <unistd.h>  // usleep (fallback)
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#include <mach/mach_time.h>
+#endif
 #endif
 
 FrameRateLimit::FrameRateLimit()
@@ -93,15 +97,44 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 	m_start = tick.QuadPart;
 	return (Real)elapsedSeconds;
 #else
-	// iOS/Unix: pace each frame relative to the time spent rendering it.
-	// Do not use absolute frame slots here: if one frame runs slightly over
-	// 16.67 ms, skipping the next slot creates a visible 60 -> 30 FPS cadence.
+	const double targetSeconds = 1.0 / static_cast<double>(maxFps);
+
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS: use Mach absolute time instead of nanosleep() for tighter frame
+	// pacing. Rebase after an over-budget frame so a spike cannot skip a
+	// whole display interval and create a visible 60 -> 30 FPS cadence.
+	static mach_timebase_info_data_t timebase = {};
+	if (timebase.denom == 0)
+		mach_timebase_info(&timebase);
+
+	const double ticksPerSecond =
+		1.0e9 * static_cast<double>(timebase.denom) / static_cast<double>(timebase.numer);
+	const uint64_t targetTicks =
+		static_cast<uint64_t>(targetSeconds * ticksPerSecond);
+
+	static uint64_t deadline = 0;
+	const uint64_t now = mach_absolute_time();
+
+	if (deadline == 0 || now >= deadline + targetTicks)
+		deadline = now + targetTicks;
+	else
+		deadline += targetTicks;
+
+	if (deadline > now)
+		mach_wait_until(deadline);
+
+	const uint64_t after = mach_absolute_time();
+	const double elapsedSeconds =
+		static_cast<double>(after - now) / ticksPerSecond;
+	m_start = static_cast<Int64>(after);
+	return static_cast<Real>(elapsedSeconds);
+#else
+	// Other Unix platforms: keep the relative high-resolution limiter.
 	struct timespec tick;
 	clock_gettime(CLOCK_MONOTONIC, &tick);
 	Int64 tickValue = static_cast<Int64>(tick.tv_sec) * 1000000000 + tick.tv_nsec;
 	double elapsedSeconds = static_cast<double>(tickValue - m_start) / static_cast<double>(m_freq);
-	const double targetSeconds = 1.0 / static_cast<double>(maxFps);
-	const double sleepSeconds = targetSeconds - elapsedSeconds - 0.001; // leave ~1ms for final precision wait
+	const double sleepSeconds = targetSeconds - elapsedSeconds - 0.001;
 
 	if (sleepSeconds > 0.0)
 	{
@@ -111,7 +144,6 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 		nanosleep(&sleepTime, nullptr);
 	}
 
-	// Final short wait avoids coarse scheduler jitter without dropping a frame.
 	do
 	{
 		clock_gettime(CLOCK_MONOTONIC, &tick);
@@ -121,7 +153,8 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 	while (elapsedSeconds < targetSeconds);
 
 	m_start = tickValue;
-	return static_cast<Real>(elapsedSeconds);#endif
+	return static_cast<Real>(elapsedSeconds);
+#endif
 }
 
 
