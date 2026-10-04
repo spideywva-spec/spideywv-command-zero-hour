@@ -1499,14 +1499,21 @@ Shadow* W3DProjectedShadowManager::addDecal(Shadow::ShadowTypeInfo *shadowInfo)
 	{
 		//Adding a new decal texture
 		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+
+		// GeneralsX @bugfix 05/10/2026 - Do not touch the texture filter before
+		// validating the asset. Missing shadow textures were previously dereferenced
+		// before the null check, which could silently kill the shadow creation path.
+		if (!w3dTexture)
+		{
+			DEBUG_ASSERTCRASH(false, ("Could not load decal texture: %s",texture_name));
+			return nullptr;
+		}
+
+		// Shadow decals are small, static masks. Clamp them and disable mip
+		// selection to avoid edge shimmer while keeping their GPU cost minimal.
 		w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-
-		DEBUG_ASSERTCRASH(w3dTexture != nullptr, ("Could not load decal texture: %s",texture_name));
-
-		if (!w3dTexture)
-			return nullptr;
 
 		st = NEW W3DShadowTexture;	// poolify
 		SET_REF_OWNER( st );
