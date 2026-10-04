@@ -130,8 +130,8 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 //   движение сразу                  -> превью за пальцем, xrel=yrel=0
 //   отпустил после движения         -> превью фиксируется, стройки нет
 //   тап < 200 мс                    -> LMB click, стройка начинается
-//   200 мс покоя                    -> MMB down, вращение здания 360°
-//   отпустил после вращения         -> MMB up + LMB click, авто-стройка
+//   200 мс покоя                    -> LMB drag от anchor, вращение здания 360°
+//   отпустил после вращения         -> LMB up, авто-стройка
 //
 // Два пальца:
 //   pinch                           -> wheel (зум), плавно, по скорости
@@ -148,7 +148,7 @@ struct TouchState {
 		Selection,       // LMB down, рамка выделения
 		BuildPending,    // превью зафиксировано / палец на нём
 		BuildMoving,     // превью едет за пальцем
-		BuildRotate,     // MMB, вращение 360°
+		BuildRotate,     // LMB drag от anchor, вращение здания
 		TwoFinger
 	};
 
@@ -196,22 +196,19 @@ constexpr Uint64 kTwoFingerTapMs    = 300;
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
-constexpr float kPinchPixelsPerTick = 40.0f;   // 40 px пинча = 1 тик колеса
-constexpr float kRotateThresholdDeg = 25.0f;   // порог включения поворота
+constexpr float kPinchPixelsPerTick = 20.0f;   // 20 px пинча = 1 тик колеса
+constexpr float kRotateThresholdDeg = 25.0f;   // порог включения поворота камеры
 constexpr float kRotatePixelsPerRad = 250.0f;  // 1 рад twist = 250 px MMB
 constexpr float kPi = 3.14159265358979323846f;
 
 // Точная проверка режима стройки. getPendingPlaceType() возвращает
-// nullptr, когда ничего не строится. Это надёжнее getMouseCursor(),
-// который игра обновляет не мгновенно.
+// nullptr, когда ничего не строится. Второй проверки через getMouseCursor()
+// здесь СОЗНАТЕЛЬНО нет: в начале матча getMouseCursor() возвращает
+// BUILD_PLACEMENT по умолчанию, из-за чего обычный свайп уходил в режим
+// стройки и камера вообще не двигалась.
 static bool isBuildingPlacementMode()
 {
-	if (TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr) return true;
-	if (TheMouse) {
-		const Mouse::MouseCursor c = TheMouse->getMouseCursor();
-		if (c == Mouse::BUILD_PLACEMENT || c == Mouse::INVALID_BUILD_PLACEMENT) return true;
-	}
-	return false;
+	return TheInGameUI && TheInGameUI->getPendingPlaceType() != nullptr;
 }
 
 static float touchDistance(float x1, float y1, float x2, float y2)
@@ -338,23 +335,6 @@ static void emitTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
 	}
 }
 
-static void startCameraPan(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
-{
-	s_touch.phase = TouchState::CameraPan;
-	s_touch.lastX = x; s_touch.lastY = y;
-	s_camX = x; s_camY = y;
-	sendMotionNoDelta(mouse, window, x, y);
-	sendBtnDown(mouse, window, x, y, SDL_BUTTON_RIGHT);
-}
-
-static void startSelection(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
-{
-	s_touch.phase = TouchState::Selection;
-	s_touch.lastX = x; s_touch.lastY = y;
-	sendMotionNoDelta(mouse, window, x, y);
-	sendBtnDown(mouse, window, x, y, SDL_BUTTON_LEFT);
-}
-
 static void releaseAllButtons(SDL3Mouse *mouse, SDL_Window *window)
 {
 	switch (s_touch.phase) {
@@ -365,22 +345,11 @@ static void releaseAllButtons(SDL3Mouse *mouse, SDL_Window *window)
 		sendBtnUp(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_LEFT);
 		break;
 	case TouchState::BuildRotate:
-		sendBtnUp(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
+		// Вращение здания в Zero Hour — LMB drag от anchor.
+		sendBtnUp(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_LEFT);
 		break;
 	default: break;
 	}
-}
-
-static void startBuildRotation(SDL3Mouse *mouse, SDL_Window *window)
-{
-	if (s_touch.phase != TouchState::BuildPending) return;
-	if (s_touch.firstFingerMoved) return;
-
-	s_touch.phase = TouchState::BuildRotate;
-	s_touch.lastX = s_touch.downX;
-	s_touch.lastY = s_touch.downY;
-	sendMotionNoDelta(mouse, window, s_touch.lastX, s_touch.lastY);
-	sendBtnDown(mouse, window, s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
 }
 
 // Пофреймовая проверка удержания 200 мс для вращения здания.
@@ -393,7 +362,15 @@ static void updateTouchHold(SDL3Mouse *mouse, SDL_Window *window)
 	if (s_touch.finger1 == 0) return;
 	if (s_touch.firstFingerMoved) return;
 	if ((SDL_GetTicks() - s_touch.downTicks) < kBuildRotateHoldMs) return;
-	startBuildRotation(mouse, window);
+
+	// Удержание 200 мс без движения по зафиксированному превью —
+	// включаем вращение здания. LMB down в точке превью; движок
+	// (PlaceEventTranslator) сам начнёт считать угол от anchor.
+	s_touch.phase = TouchState::BuildRotate;
+	s_touch.lastX = s_touch.downX;
+	s_touch.lastY = s_touch.downY;
+	sendMotionNoDelta(mouse, window, s_touch.downX, s_touch.downY);
+	sendBtnDown(mouse, window, s_touch.downX, s_touch.downY, SDL_BUTTON_LEFT);
 }
 
 static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &event)
@@ -442,7 +419,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 
-		// Превью уже зафиксировано, палец отпущен. Следующее касание —
+		// Превью зафиксировано, палец отпущен. Следующее касание —
 		// по превью: тап → стройка, удержание 200 мс → вращение.
 		if (s_touch.phase == TouchState::BuildPending && s_touch.finger1 == 0) {
 			s_touch.finger1 = id;
@@ -505,7 +482,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 				sendWheel(mouse, window, cx, cy, wheelY);
 			}
 
-			// Поворот включается только после порога.
+			// Поворот камеры включается только после порога.
 			if (!s_touch.rotationArmed) {
 				s_touch.rotationAccum += angleDelta;
 				const float deg = SDL_fabsf(s_touch.rotationAccum) * (180.0f / kPi);
@@ -516,7 +493,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 					sendBtnDown(mouse, window, cx, cy, SDL_BUTTON_MIDDLE);
 				}
 			} else if (SDL_fabsf(angleDelta) > 0.0001f) {
-				// Скорость поворота камеры линейна от скорости кручения.
 				const float shift = angleDelta * kRotatePixelsPerRad;
 				const float newX = s_synthX + shift;
 				sendMotion(mouse, window, newX, s_synthY);
@@ -546,7 +522,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			return;
 		}
 		if (s_touch.phase == TouchState::BuildRotate) {
-			// MMB drag: реальная дельта считается из s_synthX/Y.
+			// LMB drag от anchor: реальная дельта считается из s_synthX/Y.
 			sendMotion(mouse, window, x, y);
 			s_touch.lastX = x; s_touch.lastY = y;
 			return;
@@ -568,13 +544,34 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 			const Uint64 held = SDL_GetTicks() - s_touch.downTicks;
 			s_touch.firstFingerMoved = true;
+
 			if (held >= kSelectionHoldMs) {
-				startSelection(mouse, window, s_touch.downX, s_touch.downY);
+				// Палец стоял 250 мс, теперь поехал — рамка выделения.
+				s_touch.phase = TouchState::Selection;
+				s_touch.lastX = s_touch.downX; s_touch.lastY = s_touch.downY;
+				sendMotionNoDelta(mouse, window, s_touch.downX, s_touch.downY);
+				sendBtnDown(mouse, window, s_touch.downX, s_touch.downY, SDL_BUTTON_LEFT);
+				s_touch.lastX = x; s_touch.lastY = y;
+				sendMotion(mouse, window, x, y);
 			} else {
-				startCameraPan(mouse, window, s_touch.downX, s_touch.downY);
+				// Раннее движение — панорама камеры. Виртуальный курсор
+				// двигаем ПРОТИВОПОЛОЖНО пальцу, чтобы игра развернула
+				// RMB drag и карта поехала за рукой. Первое смещение
+				// применяем сразу, иначе курсор прыгает из якоря в точку
+				// пальца и движок теряет anchor.
+				s_touch.phase = TouchState::CameraPan;
+				s_touch.lastX = s_touch.downX; s_touch.lastY = s_touch.downY;
+				s_camX = s_touch.downX; s_camY = s_touch.downY;
+				sendMotionNoDelta(mouse, window, s_touch.downX, s_touch.downY);
+				sendBtnDown(mouse, window, s_touch.downX, s_touch.downY, SDL_BUTTON_RIGHT);
+
+				s_camX -= dx;
+				s_camY -= dy;
+				s_synthX = s_camX; s_synthY = s_camY; s_haveSynth = true;
+				sendMouseExplicit(mouse, window, SDL_EVENT_MOUSE_MOTION,
+				                  s_camX, s_camY, -dx, -dy);
+				s_touch.lastX = x; s_touch.lastY = y;
 			}
-			s_touch.lastX = x; s_touch.lastY = y;
-			sendMotion(mouse, window, x, y);
 			return;
 		}
 
@@ -634,10 +631,11 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 
 		// --- Режим стройки: конец вращения = авто-стройка ---
 		if (s_touch.phase == TouchState::BuildRotate) {
-			sendBtnUp(mouse, window, x, y, SDL_BUTTON_MIDDLE);
+			// LMB up завершает PlaceEventTranslator и здание строится
+			// по текущему углу. Никаких дополнительных кликов — иначе
+			// движок получит двойное событие и отменит постройку.
 			sendMotionNoDelta(mouse, window, x, y);
-			sendBtnDown(mouse, window, x, y, SDL_BUTTON_LEFT);
-			sendBtnUp  (mouse, window, x, y, SDL_BUTTON_LEFT);
+			sendBtnUp(mouse, window, x, y, SDL_BUTTON_LEFT);
 			resetTouchState();
 			return;
 		}
@@ -659,7 +657,7 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 				sendBtnUp  (mouse, window, x, y, SDL_BUTTON_LEFT);
 				resetTouchState();
 			} else {
-				// Палец ушёл раньше 200 мс, но уже без движения — превью
+				// Палец ушёл без движения, но после 200 мс — превью
 				// остаётся на месте, готово к следующему касанию.
 				s_touch.finger1 = 0;
 				s_touch.firstFingerMoved = false;
