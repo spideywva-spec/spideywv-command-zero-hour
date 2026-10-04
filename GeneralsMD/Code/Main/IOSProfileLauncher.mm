@@ -2340,13 +2340,13 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"yes" : @"no";
     gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"yes" : @"no";
     gameOptions[@"TextureReduction"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
-        gameOptions[@"TextureReductionFactor"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
+    gameOptions[@"TextureReductionFactor"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
     gameOptions[@"MaxParticleCount"] = [NSString stringWithFormat:@"%ld", (long)particleCount];
     gameOptions[@"TextureFilter"] = textureFilter;
     gameOptions[@"AnisotropyLevel"] = @"8";
     gameOptions[@"FPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
-        gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
-        gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%ld", lroundf(self.fpsSlider.value)];
+    gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
+    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%ld", lroundf(self.fpsSlider.value)];
     gameOptions[@"MaxCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.maxCameraSlider.value];
     gameOptions[@"MinCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.minCameraSlider.value];
     gameOptions[@"CameraPitch"] = [NSString stringWithFormat:@"%.1f", self.cameraPitchSlider.value];
