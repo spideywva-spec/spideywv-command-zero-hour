@@ -132,12 +132,18 @@ Bool W3DShadowManager::init()
 {
 	Bool result=TRUE;
 
-	if	(TheW3DVolumetricShadowManager && TheW3DVolumetricShadowManager->init())
+	// iOS performance: initialize only the shadow systems that are actually enabled.
+	// The projected/decal path is cheap and remains enabled by default; the
+	// volumetric/stencil path is opt-in so it does not consume GPU resources
+	// when the launcher has it disabled.
+	if (TheGlobalData->m_useShadowVolumes &&
+		TheW3DVolumetricShadowManager && TheW3DVolumetricShadowManager->init())
 	{
 		if (TheW3DVolumetricShadowManager->ReAcquireResources())
 			result = TRUE;
 	}
-	if ( TheW3DProjectedShadowManager && TheW3DProjectedShadowManager->init())
+	if (TheGlobalData->m_useShadowDecals &&
+		TheW3DProjectedShadowManager && TheW3DProjectedShadowManager->init())
 	{
 		if (TheW3DProjectedShadowManager->ReAcquireResources())
 			result = TRUE;
@@ -185,13 +191,14 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 		type = shadowInfo->m_type;
 
 	// GeneralsX @bugfix Copilot 11/05/2026 ShadowType is bitmask; route by mask instead of exact enum value.
-	if (type & SHADOW_VOLUME)
+	if ((type & SHADOW_VOLUME) && TheGlobalData->m_useShadowVolumes)
 	{
 		if (TheW3DVolumetricShadowManager)
 			return (Shadow *)TheW3DVolumetricShadowManager->addShadow(robj, shadowInfo, draw);
 	}
 
-	if (type & (SHADOW_PROJECTION | SHADOW_DYNAMIC_PROJECTION | SHADOW_DECAL | SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL))
+	if ((type & (SHADOW_PROJECTION | SHADOW_DYNAMIC_PROJECTION | SHADOW_DECAL | SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL)) &&
+		TheGlobalData->m_useShadowDecals)
 	{
 		if (TheW3DProjectedShadowManager)
 			return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, shadowInfo, draw);
