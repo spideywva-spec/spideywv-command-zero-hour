@@ -369,6 +369,20 @@ char const * GameFileClass::Set_Name( char const *filename )
 				m_fileExists = TheFileSystem->doesFileExist(m_filePath);
 			}
 
+			// The common case in ZH archives is a W3D material requesting .tga
+			// while TexturesZH.big stores the payload as .dds. Check the archive
+			// explicitly so this works even when the composite/local lookup misses.
+			if (m_fileExists == FALSE && TheArchiveFileSystem)
+			{
+				char archiveAltPath[_MAX_PATH];
+				snprintf(archiveAltPath, ARRAY_SIZE(archiveAltPath), "Art/Textures/%s", altFilename);
+				if (TheArchiveFileSystem->doesFileExist(archiveAltPath))
+				{
+					strlcpy(m_filePath, archiveAltPath, ARRAY_SIZE(m_filePath));
+					m_fileExists = TRUE;
+				}
+			}
+
 			// If found, record the alternate filename as the real filename so
 			// callers (Targa::Open, DDSFileClass) use the correct extension.
 			if( m_fileExists )
