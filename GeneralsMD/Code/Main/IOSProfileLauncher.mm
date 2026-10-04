@@ -2200,9 +2200,13 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSError *zeroHourError = nil;
     BOOL zeroHourOK = WriteKeyValueFile(ZeroHourSettingsPath(), zeroHourValues, &zeroHourError);
 
-    // Options.ini is the file actually consumed by OptionPreferences at game startup.
-    // Keep existing engine options and replace only values controlled by this launcher.
-    NSMutableDictionary<NSString *, NSString *> *gameOptions = ReadKeyValueFile(GameOptionsPath());
+    // Options.ini is consumed from the canonical GeneralsX user-data directory.
+    // Read that file first so unrelated engine settings are preserved, then mirror
+    // the resulting settings to Documents/Options.ini for compatibility with the
+    // launcher/game-file layout.
+    NSMutableDictionary<NSString *, NSString *> *gameOptions = ReadKeyValueFile(EngineOptionsPath());
+    if (gameOptions.count == 0)
+        gameOptions = ReadKeyValueFile(GameOptionsPath());
     gameOptions[@"TextureReduction"] = [NSString stringWithFormat:@"%ld", (long)textureReduction];
     gameOptions[@"HeatEffects"] = self.heatEffectsSwitch.on ? @"yes" : @"no";
     gameOptions[@"DynamicLOD"] = self.dynamicLODSwitch.on ? @"yes" : @"no";
@@ -2217,7 +2221,10 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"MaxParticleCount"] = [NSString stringWithFormat:@"%ld", (long)particleCount];
     gameOptions[@"TextureFilter"] = textureFilter;
     gameOptions[@"AnisotropyLevel"] = @"8";
+    gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"yes" : @"no";
     gameOptions[@"FPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
+    gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
+    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
     gameOptions[@"MaxCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.maxCameraSlider.value];
     gameOptions[@"MinCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.minCameraSlider.value];
     gameOptions[@"CameraPitch"] = [NSString stringWithFormat:@"%.1f", self.cameraPitchSlider.value];
@@ -2225,7 +2232,10 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(self.scrollSpeedSlider.value * 100.0f)];
 
     NSError *optionsError = nil;
-    BOOL optionsOK = WriteKeyValueFile(GameOptionsPath(), gameOptions, &optionsError);
+    BOOL canonicalOptionsOK = WriteKeyValueFile(EngineOptionsPath(), gameOptions, &optionsError);
+    NSError *mirrorOptionsError = nil;
+    BOOL mirrorOptionsOK = WriteKeyValueFile(GameOptionsPath(), gameOptions, &mirrorOptionsError);
+    BOOL optionsOK = canonicalOptionsOK && mirrorOptionsOK;
 
     if (iosOK && zeroHourOK && optionsOK)
     {
@@ -2235,7 +2245,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     }
     else
     {
-        NSError *error = iosError != nil ? iosError : (zeroHourError != nil ? zeroHourError : optionsError);
+        NSError *error = iosError != nil ? iosError :
+            (zeroHourError != nil ? zeroHourError :
+             (optionsError != nil ? optionsError : mirrorOptionsError));
         self.settingsStatus.text = [NSString stringWithFormat:@"✕ Не удалось сохранить настройки: %@",
                                     error.localizedDescription ?: @"неизвестная ошибка"];
         self.settingsStatus.textColor = [UIColor colorWithRed:1.0 green:0.42 blue:0.32 alpha:1.0];
