@@ -389,15 +389,9 @@ static void updateTouchHold(SDL3Mouse *mouse, SDL_Window *window)
 		return;
 	}
 
-	if (s_touch.phase == TouchState::ONE_PENDING &&
-	    s_touch.finger1 != 0 &&
-	    !s_touch.buildRotationActive &&
-	    SDL_GetTicks() - s_touch.downTicks >= SELECTION_HOLD_MS) {
-	return;
-	}
-
 	if (s_touch.phase == TouchState::BUILD_PREVIEW &&
 	    s_touch.finger1 != 0 &&
+	    s_touch.buildPreviewFixed &&
 	    !s_touch.buildMoved &&
 	    !s_touch.buildRotationActive &&
 	    SDL_GetTicks() - s_touch.downTicks >= BUILD_ROTATION_HOLD_MS) {
@@ -588,7 +582,7 @@ static void processTouchEvent(SDL3Mouse *mouse, SDL_Window *window,
 			if (s_touch.buildPreviewFixed) {
 				return;
 			}
-			if (distanceFromDown > TOUCH_MOVE_EPSILON_PX) {
+			if (distanceFromDown > 0.0f) {
 				s_touch.buildMoved = true;
 				s_touch.lastX = x;
 				s_touch.lastY = y;
