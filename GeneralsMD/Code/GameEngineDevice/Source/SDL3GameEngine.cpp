@@ -104,10 +104,6 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 		case SDL_EVENT_DID_ENTER_FOREGROUND:
 			s_appBackgrounded.store(false);
 			break;
-		// Resign/become active. On iOS, SDL maps applicationWillResignActive ->
-		// window focus lost and applicationDidBecomeActive -> window focus gained.
-		// Stay paused until fully active again (focus regained), which arrives
-		// after DID_ENTER_FOREGROUND.
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
 			s_appInactive.store(true);
 			break;
@@ -120,625 +116,476 @@ static bool SDLCALL iosLifecycleWatcher(void *userdata, SDL_Event *event)
 	return true;
 }
 
-// ---------------------------------------------------------------------------
-// iOS touch -> mouse gesture translation
 namespace {
 
-struct TouchState {
-	enum Phase {
-		IDLE,
-		ONE_PENDING,
-		CAMERA_PAN,
-		SELECTION,
-		BUILD_PREVIEW,
-		BUILD_ROTATE,
-		TWO_FINGER
+enum class TouchMode {
+		Idle,
+		SinglePending,
+		CameraPan,
+		Selection,
+		BuildPreview,
+		BuildRotate,
+		TwoFinger
 	};
 
-	Phase phase = IDLE;
+	struct TouchState {
+		TouchMode mode = TouchMode::Idle;
 
-	SDL_FingerID finger1 = 0;
-	SDL_FingerID finger2 = 0;
+		SDL_FingerID finger1 = 0;
+		SDL_FingerID finger2 = 0;
 
-	float downX = 0.0f;
-	float downY = 0.0f;
-	float lastX = 0.0f;
-	float lastY = 0.0f;
-	float f1x = 0.0f;
-	float f1y = 0.0f;
-	float f2x = 0.0f;
-	float f2y = 0.0f;
+		float downX = 0.0f;
+		float downY = 0.0f;
+		float lastX = 0.0f;
+		float lastY = 0.0f;
+		float startX = 0.0f;
+		float startY = 0.0f;
 
-	Uint64 downTicks = 0;
+		Uint64 downTicks = 0;
+		bool buildPreviewFixed = false;
+		bool buildRotationEnabled = false;
+		bool buildMoved = false;
 
-	bool buildMoved = false;
-	bool buildRotationActive = false;
-	bool buildPreviewFixed = false;
+		float pinchStartDistance = 0.0f;
+		float pinchStartAngle = 0.0f;
+		float rotationAccum = 0.0f;
+		bool rotationArmed = false;
+		bool pinchMoved = false;
+		Uint64 twoFingerDownTicks = 0;
 
-	Uint64 twoFingerDownTicks = 0;
-	float twoFingerStart1X = 0.0f;
-	float twoFingerStart1Y = 0.0f;
-	float twoFingerStart2X = 0.0f;
-	float twoFingerStart2Y = 0.0f;
-	float lastDistance = 0.0f;
-	float lastAngle = 0.0f;
-	float rotationAccum = 0.0f;
-	float twoFingerMove1 = 0.0f;
-	float twoFingerMove2 = 0.0f;
-	bool twoFingerRotationActive = false;
-	bool twoFingerMoved = false;
-	bool secondFingerReleased = false;
+		Uint64 lastTapTicks = 0;
+		float lastTapX = 0.0f;
+		float lastTapY = 0.0f;
+		bool haveLastTap = false;
+	};
 
-	Uint64 lastTapTicks = 0;
-	float lastTapX = 0.0f;
-	float lastTapY = 0.0f;
-	bool haveLastTap = false;
-};
+	TouchState s_touch;
 
-TouchState s_touch;
+	constexpr Uint64 kSelectionHoldMs = 250;
+	constexpr Uint64 kBuildRotateHoldMs = 200;
+	constexpr Uint64 kDoubleTapMs = 300;
+	constexpr float kTapDistancePx = 40.0f;
+	constexpr float kTouchMoveEpsilonPx = 5.0f;
+	constexpr float kTwoFingerMoveThresholdPx = 20.0f;
+	constexpr float kTwoFingerRotationThresholdDeg = 40.0f;
+	constexpr float kPinchWheelScale = 0.035f;
+	constexpr float kRotationScale = 1.75f;
 
-constexpr Uint64 SELECTION_HOLD_MS = 250;
-constexpr Uint64 BUILD_ROTATION_HOLD_MS = 200;
-constexpr Uint64 DOUBLE_TAP_MS = 300;
-constexpr Uint64 TWO_FINGER_TAP_MS = 300;
+	static bool isBuildingPlacementMode(SDL3Mouse *mouse)
+	{
+		if (!mouse) {
+			return false;
+		}
 
-constexpr float TOUCH_MOVE_EPSILON_PX = 5.0f;
-constexpr float DOUBLE_TAP_DISTANCE_PX = 40.0f;
-constexpr float TWO_FINGER_TOTAL_MOVE_PX = 20.0f;
-constexpr float TWO_FINGER_ROTATION_DEGREES = 40.0f;
-constexpr float PINCH_WHEEL_SCALE = 0.035f;
-constexpr float TWO_FINGER_ROTATION_SCALE = 1.75f;
-
-static bool isBuildingPlacementMode(SDL3Mouse *mouse)
-{
-	if (!mouse) {
-		return false;
+		const Mouse::MouseCursor cursor = mouse->getMouseCursor();
+		return cursor == Mouse::BUILD_PLACEMENT || cursor == Mouse::INVALID_BUILD_PLACEMENT;
 	}
 
-	const Mouse::MouseCursor cursor = mouse->getMouseCursor();
-	return cursor == Mouse::BUILD_PLACEMENT ||
-	       cursor == Mouse::INVALID_BUILD_PLACEMENT;
-}
-
-static float touchDistancePx(float x1, float y1, float x2, float y2,
-                             int width, int height)
-{
-	const float dx = (x1 - x2) * static_cast<float>(width);
-	const float dy = (y1 - y2) * static_cast<float>(height);
-	return SDL_sqrtf(dx * dx + dy * dy);
-}
-
-static float touchAngle(float x1, float y1, float x2, float y2)
-{
-	return SDL_atan2f(y2 - y1, x2 - x1);
-}
-
-static float normalizedAngleDelta(float current, float previous)
-{
-	constexpr float PI = 3.14159265358979323846f;
-	float delta = current - previous;
-	while (delta > PI) {
-		delta -= 2.0f * PI;
-	}
-	while (delta < -PI) {
-		delta += 2.0f * PI;
-	}
-	return delta;
-}
-
-static void resetTouchState()
-{
-	const Uint64 lastTapTicks = s_touch.lastTapTicks;
-	const float lastTapX = s_touch.lastTapX;
-	const float lastTapY = s_touch.lastTapY;
-	const bool haveLastTap = s_touch.haveLastTap;
-	s_touch = TouchState{};
-	s_touch.lastTapTicks = lastTapTicks;
-	s_touch.lastTapX = lastTapX;
-	s_touch.lastTapY = lastTapY;
-	s_touch.haveLastTap = haveLastTap;
-}
-
-static void sendSyntheticMouse(SDL3Mouse *mouse, SDL_Window *window,
-                               Uint32 type, float x, float y,
-                               Uint8 button = 0, float wheelY = 0.0f,
-                               Uint8 clicks = 1, bool suppressMotionDelta = false)
-{
-	if (!mouse || !window) {
-		return;
+	static float touchDistancePx(float x1, float y1, float x2, float y2)
+	{
+		const float dx = x1 - x2;
+		const float dy = y1 - y2;
+		return SDL_sqrtf(dx * dx + dy * dy);
 	}
 
-	SDL_Event event;
-	SDL_zero(event);
-	event.type = type;
+	static float touchAngle(float x1, float y1, float x2, float y2)
+	{
+		return SDL_atan2f(y2 - y1, x2 - x1);
+	}
 
-	const SDL_WindowID windowID = SDL_GetWindowID(window);
+	static float normalizedAngleDelta(float current, float previous)
+	{
+		constexpr float pi = 3.14159265358979323846f;
+		float delta = current - previous;
+		while (delta > pi) {
+			delta -= 2.0f * pi;
+		}
+		while (delta < -pi) {
+			delta += 2.0f * pi;
+		}
+		return delta;
+	}
 
-	switch (type) {
-	case SDL_EVENT_MOUSE_MOTION:
-		event.motion.windowID = windowID;
+	static void resetTouchState()
+	{
+		const Uint64 lastTapTicks = s_touch.lastTapTicks;
+		const float lastTapX = s_touch.lastTapX;
+		const float lastTapY = s_touch.lastTapY;
+		const bool haveLastTap = s_touch.haveLastTap;
+
+		s_touch = TouchState{};
+		s_touch.lastTapTicks = lastTapTicks;
+		s_touch.lastTapX = lastTapX;
+		s_touch.lastTapY = lastTapY;
+		s_touch.haveLastTap = haveLastTap;
+	}
+
+	static void sendSyntheticMouse(SDL3Mouse *mouse, SDL_Window *window,
+		Uint32 type, float x, float y,
+		Uint8 button = 0, float wheelY = 0.0f,
+		Uint8 clicks = 1, float xrel = 0.0f, float yrel = 0.0f)
+	{
+		if (!mouse || !window) {
+			return;
+		}
+
+		SDL_Event event;
+		SDL_zero(event);
+		event.type = type;
+		event.motion.windowID = SDL_GetWindowID(window);
 		event.motion.which = 0;
-		event.motion.x = x;
-		event.motion.y = y;
-		if (suppressMotionDelta) {
-			event.motion.xrel = 0.0f;
-			event.motion.yrel = 0.0f;
+
+		switch (type) {
+		case SDL_EVENT_MOUSE_MOTION:
+			event.motion.x = x;
+			event.motion.y = y;
+			event.motion.xrel = xrel;
+			event.motion.yrel = yrel;
+			event.motion.state = 0;
+			break;
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+			event.button.windowID = SDL_GetWindowID(window);
+			event.button.which = 0;
+			event.button.button = button;
+			event.button.down = (type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+			event.button.clicks = clicks;
+			event.button.x = x;
+			event.button.y = y;
+			break;
+		case SDL_EVENT_MOUSE_WHEEL:
+			event.wheel.windowID = SDL_GetWindowID(window);
+			event.wheel.which = 0;
+			event.wheel.x = 0.0f;
+			event.wheel.y = wheelY;
+			event.wheel.mouse_x = x;
+			event.wheel.mouse_y = y;
+			break;
+		default:
+			return;
+		}
+
+		mouse->addSDLEvent(&event);
+	}
+
+	static void sendSyntheticMotion(SDL3Mouse *mouse, SDL_Window *window,
+		float x, float y, float xrel, float yrel)
+	{
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_MOTION, x, y, 0, 0.0f, 1, xrel, yrel);
+	}
+
+	static void sendTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
+	{
+		const Uint64 now = SDL_GetTicks();
+		const float dx = x - s_touch.lastTapX;
+		const float dy = y - s_touch.lastTapY;
+		const bool doubleTap = s_touch.haveLastTap &&
+			now - s_touch.lastTapTicks <= kDoubleTapMs &&
+			SDL_sqrtf(dx * dx + dy * dy) <= kTapDistancePx;
+
+		const Uint8 clicks = doubleTap ? 2 : 1;
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_LEFT, 0.0f, clicks);
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_LEFT, 0.0f, clicks);
+
+		if (doubleTap) {
+			s_touch.haveLastTap = false;
 		} else {
-			event.motion.xrel = x - s_touch.lastX;
-			event.motion.yrel = y - s_touch.lastY;
+			s_touch.lastTapTicks = now;
+			s_touch.lastTapX = x;
+			s_touch.lastTapY = y;
+			s_touch.haveLastTap = true;
 		}
-		event.motion.state = 0;
-		break;
-
-	case SDL_EVENT_MOUSE_BUTTON_DOWN:
-	case SDL_EVENT_MOUSE_BUTTON_UP:
-		event.button.windowID = windowID;
-		event.button.which = 0;
-		event.button.button = button;
-		event.button.down = type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-		event.button.clicks = clicks;
-		event.button.x = x;
-		event.button.y = y;
-		break;
-
-	case SDL_EVENT_MOUSE_WHEEL:
-		event.wheel.windowID = windowID;
-		event.wheel.which = 0;
-		event.wheel.x = 0.0f;
-		event.wheel.y = wheelY;
-		event.wheel.mouse_x = x;
-		event.wheel.mouse_y = y;
-		break;
-
-	default:
-		return;
 	}
 
-	mouse->addSDLEvent(&event);
-}
-
-static void sendSyntheticMotion(SDL3Mouse *mouse, SDL_Window *window,
-                                float x, float y, float xrel, float yrel)
-{
-	if (!mouse || !window) {
-		return;
+	static void startCameraPan(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
+	{
+		s_touch.mode = TouchMode::CameraPan;
+		s_touch.lastX = x;
+		s_touch.lastY = y;
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_RIGHT);
 	}
 
-	SDL_Event event;
-	SDL_zero(event);
-	event.type = SDL_EVENT_MOUSE_MOTION;
-	event.motion.windowID = SDL_GetWindowID(window);
-	event.motion.which = 0;
-	event.motion.x = x;
-	event.motion.y = y;
-	event.motion.xrel = xrel;
-	event.motion.yrel = yrel;
-	event.motion.state = 0;
-	mouse->addSDLEvent(&event);
-}
-
-static void sendTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
-{
-	const Uint64 now = SDL_GetTicks();
-	const float dx = x - s_touch.lastTapX;
-	const float dy = y - s_touch.lastTapY;
-	const bool doubleTap =
-		s_touch.haveLastTap &&
-		now - s_touch.lastTapTicks <= DOUBLE_TAP_MS &&
-		SDL_sqrtf(dx * dx + dy * dy) <= DOUBLE_TAP_DISTANCE_PX;
-
-	const Uint8 clicks = doubleTap ? 2 : 1;
-
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
-	                   x, y, SDL_BUTTON_LEFT, 0.0f, clicks);
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
-	                   x, y, SDL_BUTTON_LEFT, 0.0f, clicks);
-
-	if (doubleTap) {
-		s_touch.haveLastTap = false;
-	} else {
-		s_touch.lastTapTicks = now;
-		s_touch.lastTapX = x;
-		s_touch.lastTapY = y;
-		s_touch.haveLastTap = true;
-	}
-}
-
-static void startCameraPan(SDL3Mouse *mouse, SDL_Window *window,
-                           float x, float y)
-{
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
-	                   x, y, SDL_BUTTON_RIGHT);
-	s_touch.phase = TouchState::CAMERA_PAN;
-}
-
-static void startSelection(SDL3Mouse *mouse, SDL_Window *window,
-                           float x, float y)
-{
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
-	                   x, y, SDL_BUTTON_LEFT);
-	s_touch.phase = TouchState::SELECTION;
-}
-
-static void startBuildingRotation(SDL3Mouse *mouse, SDL_Window *window)
-{
-	if (s_touch.buildMoved || s_touch.buildRotationActive) {
-		return;
+	static void startSelection(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
+	{
+		s_touch.mode = TouchMode::Selection;
+		s_touch.lastX = x;
+		s_touch.lastY = y;
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_LEFT);
 	}
 
-	s_touch.buildRotationActive = true;
-	s_touch.phase = TouchState::BUILD_ROTATE;
-
-	sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN,
-	                   s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
-}
-
-static void cancelBuilding(SDL3Mouse *mouse, SDL_Window *window)
-{
-	if (s_touch.buildRotationActive) {
-		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP,
-		                   s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
-	}
-
-	resetTouchState();
-}
-
-static void updateTouchHold(SDL3Mouse *mouse, SDL_Window *window)
-{
-	if (!mouse || !window) {
-		return;
-	}
-
-	if (s_touch.phase == TouchState::BUILD_PREVIEW &&
-	    s_touch.finger1 != 0 &&
-	    s_touch.buildPreviewFixed &&
-	    !s_touch.buildMoved &&
-	    !s_touch.buildRotationActive &&
-	    SDL_GetTicks() - s_touch.downTicks >= BUILD_ROTATION_HOLD_MS) {
-		startBuildingRotation(mouse, window);
-	}
-}
-
-static void processTouchEvent(SDL3Mouse *mouse, SDL_Window *window,
-                              const SDL_Event &event)
-{
-	if (!mouse || !window) {
-		return;
-	}
-
-	int width = 0;
-	int height = 0;
-	SDL_GetWindowSize(window, &width, &height);
-
-	if (event.type == SDL_EVENT_FINGER_CANCELED) {
-		resetTouchState();
-		return;
-	}
-
-	if (event.type == SDL_EVENT_FINGER_DOWN) {
-		const SDL_FingerID id = event.tfinger.fingerID;
-		const float x = event.tfinger.x * static_cast<float>(width);
-		const float y = event.tfinger.y * static_cast<float>(height);
-
-		if (s_touch.phase == TouchState::IDLE) {
-			s_touch.finger1 = id;
-			s_touch.downX = x;
-			s_touch.downY = y;
-			s_touch.lastX = x;
-			s_touch.lastY = y;
-			s_touch.f1x = event.tfinger.x;
-			s_touch.f1y = event.tfinger.y;
-			s_touch.downTicks = SDL_GetTicks();
-			s_touch.buildMoved = false;
-			s_touch.buildRotationActive = false;
-			s_touch.buildPreviewFixed = false;
-			s_touch.phase = isBuildingPlacementMode(mouse)
-			? TouchState::BUILD_PREVIEW
-			: TouchState::ONE_PENDING;
+	static void startBuildRotation(SDL3Mouse *mouse, SDL_Window *window)
+	{
+		if (s_touch.buildMoved || s_touch.buildRotationEnabled) {
 			return;
 		}
 
-		if (s_touch.phase == TouchState::BUILD_PREVIEW &&
-		    s_touch.finger1 == 0 &&
-		    s_touch.buildPreviewFixed) {
-			s_touch.finger1 = id;
-			s_touch.downX = x;
-			s_touch.downY = y;
-			s_touch.lastX = x;
-			s_touch.lastY = y;
-			s_touch.f1x = event.tfinger.x;
-			s_touch.f1y = event.tfinger.y;
-			s_touch.downTicks = SDL_GetTicks();
-			s_touch.buildMoved = false;
-			s_touch.buildRotationActive = false;
-			return;
-		}
-
-		if (s_touch.finger1 != 0 && id != s_touch.finger1 &&
-		    s_touch.finger2 == 0) {
-			if (s_touch.phase == TouchState::BUILD_PREVIEW ||
-			    s_touch.phase == TouchState::BUILD_ROTATE) {
-				cancelBuilding(mouse, window);
-				return;
-			}
-
-			s_touch.finger2 = id;
-			s_touch.f2x = event.tfinger.x;
-			s_touch.f2y = event.tfinger.y;
-			s_touch.twoFingerDownTicks = SDL_GetTicks();
-			s_touch.twoFingerStart1X = s_touch.f1x;
-			s_touch.twoFingerStart1Y = s_touch.f1y;
-			s_touch.twoFingerStart2X = s_touch.f2x;
-			s_touch.twoFingerStart2Y = s_touch.f2y;
-			s_touch.lastDistance = touchDistancePx(
-				s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y,
-				width, height);
-			s_touch.lastAngle = touchAngle(
-				s_touch.f1x, s_touch.f1y, s_touch.f2x, s_touch.f2y);
-			s_touch.rotationAccum = 0.0f;
-			s_touch.twoFingerMove1 = 0.0f;
-			s_touch.twoFingerMove2 = 0.0f;
-			s_touch.twoFingerRotationActive = false;
-			s_touch.twoFingerMoved = false;
-			s_touch.secondFingerReleased = false;
-
-			if (s_touch.phase == TouchState::CAMERA_PAN) {
-				sendSyntheticMouse(mouse, window,
-				                   SDL_EVENT_MOUSE_BUTTON_UP,
-				                   s_touch.lastX, s_touch.lastY,
-				                   SDL_BUTTON_RIGHT);
-			} else if (s_touch.phase == TouchState::SELECTION) {
-				sendSyntheticMouse(mouse, window,
-				                   SDL_EVENT_MOUSE_BUTTON_UP,
-				                   s_touch.lastX, s_touch.lastY,
-				                   SDL_BUTTON_LEFT);
-			}
-
-			s_touch.phase = TouchState::TWO_FINGER;
-			return;
-		}
-		return;
+		s_touch.buildRotationEnabled = true;
+		s_touch.mode = TouchMode::BuildRotate;
+		s_touch.lastX = s_touch.downX;
+		s_touch.lastY = s_touch.downY;
+		sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
 	}
 
-	if (event.type == SDL_EVENT_FINGER_MOTION) {
-		const SDL_FingerID id = event.tfinger.fingerID;
-		const float x = event.tfinger.x * static_cast<float>(width);
-		const float y = event.tfinger.y * static_cast<float>(height);
-
-		if (s_touch.phase == TouchState::TWO_FINGER) {
-			if (id == s_touch.finger1) {
-				s_touch.f1x = event.tfinger.x;
-				s_touch.f1y = event.tfinger.y;
-			} else if (id == s_touch.finger2) {
-				s_touch.f2x = event.tfinger.x;
-				s_touch.f2y = event.tfinger.y;
-			} else {
-				return;
-			}
-
-			const float move1 = touchDistancePx(
-				s_touch.f1x, s_touch.f1y,
-				s_touch.twoFingerStart1X, s_touch.twoFingerStart1Y,
-				width, height);
-			const float move2 = touchDistancePx(
-				s_touch.f2x, s_touch.f2y,
-				s_touch.twoFingerStart2X, s_touch.twoFingerStart2Y,
-				width, height);
-
-			s_touch.twoFingerMove1 = move1;
-			s_touch.twoFingerMove2 = move2;
-			s_touch.twoFingerMoved =
-				(move1 + move2) >= TWO_FINGER_TOTAL_MOVE_PX;
-
-			const float distance = touchDistancePx(
-				s_touch.f1x, s_touch.f1y,
-				s_touch.f2x, s_touch.f2y, width, height);
-			const float angle = touchAngle(
-				s_touch.f1x, s_touch.f1y,
-				s_touch.f2x, s_touch.f2y);
-			const float distanceDelta = distance - s_touch.lastDistance;
-			const float angleDelta = normalizedAngleDelta(
-				angle, s_touch.lastAngle);
-
-			s_touch.lastDistance = distance;
-			s_touch.lastAngle = angle;
-			s_touch.rotationAccum += angleDelta * 180.0f /
-				3.14159265358979323846f;
-
-			if (!s_touch.twoFingerRotationActive &&
-				SDL_fabsf(s_touch.rotationAccum) >= TWO_FINGER_ROTATION_DEGREES) {
-				s_touch.twoFingerRotationActive = true;
-				sendSyntheticMouse(mouse, window,
-				                   SDL_EVENT_MOUSE_BUTTON_DOWN,
-				                   x, y, SDL_BUTTON_MIDDLE);
-			}
-
-			if (distanceDelta != 0.0f) {
-				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_WHEEL,
-				                   x, y, 0,
-				                   distanceDelta * PINCH_WHEEL_SCALE);
-			}
-
-			if (s_touch.twoFingerRotationActive && angleDelta != 0.0f) {
-				const float rotationPixels =
-					angleDelta * TWO_FINGER_ROTATION_SCALE;
-				sendSyntheticMotion(mouse, window, x, y,
-				                   rotationPixels, 0.0f);
-			}
+	static void processTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &event)
+	{
+		if (!mouse || !window) {
 			return;
 		}
 
-		if (id != s_touch.finger1) {
+		int width = 0;
+		int height = 0;
+		SDL_GetWindowSize(window, &width, &height);
+		if (width <= 0 || height <= 0) {
 			return;
 		}
 
-		const float dx = x - s_touch.downX;
-		const float dy = y - s_touch.downY;
-		const float distanceFromDown = SDL_sqrtf(dx * dx + dy * dy);
+		if (event.type == SDL_EVENT_FINGER_CANCELED) {
+			resetTouchState();
+			return;
+		}
 
-		if (s_touch.phase == TouchState::BUILD_PREVIEW) {
-			s_touch.f1x = event.tfinger.x;
-			s_touch.f1y = event.tfinger.y;
-			if (s_touch.buildPreviewFixed) {
-				return;
-			}
-			if (distanceFromDown > 0.0f) {
-				s_touch.buildMoved = true;
+		if (event.type == SDL_EVENT_FINGER_DOWN) {
+			const SDL_FingerID id = event.tfinger.fingerID;
+			const float x = event.tfinger.x * static_cast<float>(width);
+			const float y = event.tfinger.y * static_cast<float>(height);
+
+			if (s_touch.mode == TouchMode::Idle) {
+				s_touch.finger1 = id;
+				s_touch.downX = x;
+				s_touch.downY = y;
 				s_touch.lastX = x;
 				s_touch.lastY = y;
-				sendSyntheticMotion(mouse, window, x, y, 0.0f, 0.0f);
-			}
-			return;
-		}
-
-		if (s_touch.phase == TouchState::BUILD_ROTATE) {
-			const float xrel = x - s_touch.lastX;
-			const float yrel = y - s_touch.lastY;
-			s_touch.lastX = x;
-			s_touch.lastY = y;
-			sendSyntheticMotion(mouse, window, x, y, xrel, yrel);
-			return;
-		}
-
-		if (s_touch.phase == TouchState::ONE_PENDING) {
-			if (distanceFromDown <= TOUCH_MOVE_EPSILON_PX) {
+				s_touch.startX = x;
+				s_touch.startY = y;
+				s_touch.downTicks = SDL_GetTicks();
+				s_touch.buildMoved = false;
+				s_touch.buildPreviewFixed = false;
+				s_touch.buildRotationEnabled = false;
+				s_touch.mode = isBuildingPlacementMode(mouse) ? TouchMode::BuildPreview : TouchMode::SinglePending;
 				return;
 			}
 
-			if (SDL_GetTicks() - s_touch.downTicks < SELECTION_HOLD_MS) {
-				startCameraPan(mouse, window, s_touch.downX, s_touch.downY);
-			} else {
-				startSelection(mouse, window, s_touch.downX, s_touch.downY);
+			if (s_touch.mode == TouchMode::TwoFinger) {
+				return;
 			}
 
-			s_touch.lastX = x;
-			s_touch.lastY = y;
-			sendSyntheticMotion(mouse, window, x, y, x - s_touch.downX,
-			                   y - s_touch.downY);
-			return;
-		}
-
-		if (s_touch.phase == TouchState::CAMERA_PAN ||
-		    s_touch.phase == TouchState::SELECTION) {
-			const float xrel = x - s_touch.lastX;
-			const float yrel = y - s_touch.lastY;
-			s_touch.lastX = x;
-			s_touch.lastY = y;
-			sendSyntheticMotion(mouse, window, x, y, xrel, yrel);
-		}
-		return;
-	}
-
-	if (event.type == SDL_EVENT_FINGER_UP) {
-		const SDL_FingerID id = event.tfinger.fingerID;
-		const float x = event.tfinger.x * static_cast<float>(width);
-		const float y = event.tfinger.y * static_cast<float>(height);
-
-		if (s_touch.phase == TouchState::TWO_FINGER) {
-			if (id == s_touch.finger1 || id == s_touch.finger2) {
-				s_touch.secondFingerReleased =
-					s_touch.secondFingerReleased || id == s_touch.finger2;
-
-				if (s_touch.finger1 == id) {
-					s_touch.finger1 = 0;
-				} else {
-					s_touch.finger2 = 0;
-				}
-
-				const Uint64 elapsed =
-					SDL_GetTicks() - s_touch.twoFingerDownTicks;
-				if (s_touch.finger1 == 0 && s_touch.finger2 == 0) {
-					if (s_touch.twoFingerRotationActive) {
-						sendSyntheticMouse(mouse, window,
-						                   SDL_EVENT_MOUSE_BUTTON_UP,
-						                   x, y, SDL_BUTTON_MIDDLE);
-					}
-					if (elapsed <= TWO_FINGER_TAP_MS &&
-					    !s_touch.twoFingerMoved &&
-					    !s_touch.twoFingerRotationActive) {
-						sendSyntheticMouse(mouse, window,
-						                   SDL_EVENT_MOUSE_BUTTON_DOWN,
-						                   x, y, SDL_BUTTON_RIGHT);
-						sendSyntheticMouse(mouse, window,
-						                   SDL_EVENT_MOUSE_BUTTON_UP,
-						                   x, y, SDL_BUTTON_RIGHT);
+			if (s_touch.finger1 != 0 && id != s_touch.finger1 && s_touch.finger2 == 0) {
+				if (s_touch.mode == TouchMode::BuildPreview || s_touch.mode == TouchMode::BuildRotate) {
+					if (s_touch.buildRotationEnabled) {
+						sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, s_touch.lastX, s_touch.lastY, SDL_BUTTON_MIDDLE);
 					}
 					resetTouchState();
+					return;
 				}
+
+				s_touch.finger2 = id;
+				s_touch.pinchStartDistance = touchDistancePx(
+					event.tfinger.x,
+					event.tfinger.y,
+					s_touch.downX / static_cast<float>(width),
+					s_touch.downY / static_cast<float>(height));
+				s_touch.pinchStartAngle = touchAngle(
+					event.tfinger.x,
+					event.tfinger.y,
+					s_touch.downX / static_cast<float>(width),
+					s_touch.downY / static_cast<float>(height));
+				s_touch.rotationAccum = 0.0f;
+				s_touch.rotationArmed = false;
+				s_touch.pinchMoved = false;
+				s_touch.twoFingerDownTicks = SDL_GetTicks();
+
+				if (s_touch.mode == TouchMode::CameraPan) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, s_touch.lastX, s_touch.lastY, SDL_BUTTON_RIGHT);
+				} else if (s_touch.mode == TouchMode::Selection) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, s_touch.lastX, s_touch.lastY, SDL_BUTTON_LEFT);
+				}
+
+				s_touch.mode = TouchMode::TwoFinger;
+				return;
 			}
 			return;
 		}
 
-		if (id != s_touch.finger1) {
-			return;
-		}
+		if (event.type == SDL_EVENT_FINGER_MOTION) {
+			const SDL_FingerID id = event.tfinger.fingerID;
+			const float x = event.tfinger.x * static_cast<float>(width);
+			const float y = event.tfinger.y * static_cast<float>(height);
 
-		if (s_touch.phase == TouchState::BUILD_ROTATE) {
-			sendSyntheticMouse(mouse, window,
-			                   SDL_EVENT_MOUSE_BUTTON_UP,
-			                   x, y, SDL_BUTTON_MIDDLE);
-			sendSyntheticMouse(mouse, window,
-			                   SDL_EVENT_MOUSE_BUTTON_DOWN,
-			                   x, y, SDL_BUTTON_LEFT);
-			sendSyntheticMouse(mouse, window,
-			                   SDL_EVENT_MOUSE_BUTTON_UP,
-			                   x, y, SDL_BUTTON_LEFT);
-			resetTouchState();
-			return;
-		}
+			if (s_touch.mode == TouchMode::TwoFinger) {
+				if (id == s_touch.finger1) {
+					s_touch.startX = x;
+					s_touch.startY = y;
+				} else if (id == s_touch.finger2) {
+					// second finger is tracked as the current touch movement center
+					s_touch.lastX = x;
+					s_touch.lastY = y;
+				} else {
+					return;
+				}
 
-		if (s_touch.phase == TouchState::BUILD_PREVIEW) {
-			if (!s_touch.buildPreviewFixed) {
-				s_touch.buildPreviewFixed = true;
-				s_touch.finger1 = 0;
-				s_touch.finger2 = 0;
-				s_touch.buildMoved = false;
-				s_touch.buildRotationActive = false;
-				s_touch.downTicks = 0;
-				s_touch.lastX = x;
-				s_touch.lastY = y;
+				const float centerX = (s_touch.startX + s_touch.lastX) * 0.5f;
+				const float centerY = (s_touch.startY + s_touch.lastY) * 0.5f;
+				const float distance = touchDistancePx(s_touch.startX, s_touch.startY, s_touch.lastX, s_touch.lastY);
+				const float angle = touchAngle(s_touch.startX, s_touch.startY, s_touch.lastX, s_touch.lastY);
+				const float distanceDelta = distance - s_touch.pinchStartDistance;
+				const float angleDelta = normalizedAngleDelta(angle, s_touch.pinchStartAngle);
+
+				s_touch.pinchMoved = (SDL_fabsf(distanceDelta) >= kTwoFingerMoveThresholdPx);
+			s_touch.rotationAccum += angleDelta * 180.0f / 3.14159265358979323846f;
+
+				if (distanceDelta != 0.0f) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_WHEEL, centerX, centerY, 0, distanceDelta * kPinchWheelScale);
+				}
+
+				if (!s_touch.rotationArmed && SDL_fabsf(s_touch.rotationAccum) >= kTwoFingerRotationThresholdDeg) {
+					s_touch.rotationArmed = true;
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, centerX, centerY, SDL_BUTTON_MIDDLE);
+				}
+
+				if (s_touch.rotationArmed && angleDelta != 0.0f) {
+					sendSyntheticMotion(mouse, window, centerX, centerY,
+						angleDelta * kRotationScale * 8.0f,
+						0.0f);
+				}
 				return;
 			}
 
-			const Uint64 held = SDL_GetTicks() - s_touch.downTicks;
-			if (held < BUILD_ROTATION_HOLD_MS && !s_touch.buildRotationActive) {
-				sendSyntheticMouse(mouse, window,
-				                   SDL_EVENT_MOUSE_BUTTON_DOWN,
-				                   x, y, SDL_BUTTON_LEFT);
-				sendSyntheticMouse(mouse, window,
-				                   SDL_EVENT_MOUSE_BUTTON_UP,
-				                   x, y, SDL_BUTTON_LEFT);
-				resetTouchState();
+			if (id != s_touch.finger1) {
+				return;
 			}
-			return;
+
+			const float dx = x - s_touch.downX;
+			const float dy = y - s_touch.downY;
+			const float distanceFromDown = SDL_sqrtf(dx * dx + dy * dy);
+
+			if (s_touch.mode == TouchMode::BuildPreview) {
+				if (s_touch.buildPreviewFixed) {
+					return;
+				}
+				if (distanceFromDown > 0.0f) {
+					s_touch.buildMoved = true;
+					s_touch.lastX = x;
+					s_touch.lastY = y;
+					sendSyntheticMotion(mouse, window, x, y, 0.0f, 0.0f);
+				}
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::BuildRotate) {
+				const float xrel = x - s_touch.lastX;
+				const float yrel = y - s_touch.lastY;
+				s_touch.lastX = x;
+				s_touch.lastY = y;
+				sendSyntheticMotion(mouse, window, x, y, xrel, yrel);
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::SinglePending) {
+				if (distanceFromDown <= kTouchMoveEpsilonPx) {
+					return;
+				}
+
+				if (SDL_GetTicks() - s_touch.downTicks < kSelectionHoldMs) {
+					startCameraPan(mouse, window, s_touch.downX, s_touch.downY);
+				} else {
+					startSelection(mouse, window, s_touch.downX, s_touch.downY);
+				}
+
+				s_touch.lastX = x;
+				s_touch.lastY = y;
+				sendSyntheticMotion(mouse, window, x, y, x - s_touch.downX, y - s_touch.downY);
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::CameraPan || s_touch.mode == TouchMode::Selection) {
+				const float xrel = x - s_touch.lastX;
+				const float yrel = y - s_touch.lastY;
+				s_touch.lastX = x;
+				s_touch.lastY = y;
+				sendSyntheticMotion(mouse, window, x, y, xrel, yrel);
+			}
 		}
 
-		if (s_touch.phase == TouchState::CAMERA_PAN) {
-			sendSyntheticMouse(mouse, window,
-			                   SDL_EVENT_MOUSE_BUTTON_UP,
-			                   x, y, SDL_BUTTON_RIGHT);
-			resetTouchState();
-			return;
-		}
+		if (event.type == SDL_EVENT_FINGER_UP) {
+			const SDL_FingerID id = event.tfinger.fingerID;
+			const float x = event.tfinger.x * static_cast<float>(width);
+			const float y = event.tfinger.y * static_cast<float>(height);
 
-		if (s_touch.phase == TouchState::SELECTION) {
-			sendSyntheticMouse(mouse, window,
-			                   SDL_EVENT_MOUSE_BUTTON_UP,
-			                   x, y, SDL_BUTTON_LEFT);
-			resetTouchState();
-			return;
-		}
+			if (s_touch.mode == TouchMode::TwoFinger) {
+				if (id == s_touch.finger1 || id == s_touch.finger2) {
+					if (s_touch.finger1 == id) {
+						s_touch.finger1 = 0;
+					} else {
+						s_touch.finger2 = 0;
+					}
 
-		if (s_touch.phase == TouchState::ONE_PENDING) {
-			sendTap(mouse, window, x, y);
-			resetTouchState();
-			return;
+					const Uint64 elapsed = SDL_GetTicks() - s_touch.twoFingerDownTicks;
+					if (s_touch.finger1 == 0 && s_touch.finger2 == 0) {
+						if (s_touch.rotationArmed) {
+							sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_MIDDLE);
+						}
+						if (elapsed <= 300 && !s_touch.pinchMoved && !s_touch.rotationArmed) {
+							sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_RIGHT);
+							sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_RIGHT);
+						}
+						resetTouchState();
+					}
+				}
+				return;
+			}
+
+			if (id != s_touch.finger1) {
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::BuildRotate) {
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_MIDDLE);
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_LEFT);
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_LEFT);
+				resetTouchState();
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::BuildPreview) {
+				if (!s_touch.buildPreviewFixed) {
+					s_touch.buildPreviewFixed = true;
+					s_touch.finger1 = 0;
+					s_touch.lastX = x;
+					s_touch.lastY = y;
+					return;
+				}
+
+				const Uint64 held = SDL_GetTicks() - s_touch.downTicks;
+				if (held < kBuildRotateHoldMs && !s_touch.buildRotationEnabled) {
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_DOWN, x, y, SDL_BUTTON_LEFT);
+					sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_LEFT);
+					resetTouchState();
+					return;
+				}
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::CameraPan) {
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_RIGHT);
+				resetTouchState();
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::Selection) {
+				sendSyntheticMouse(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, SDL_BUTTON_LEFT);
+				resetTouchState();
+				return;
+			}
+
+			if (s_touch.mode == TouchMode::SinglePending) {
+				sendTap(mouse, window, x, y);
+				resetTouchState();
+				return;
+			}
 		}
 	}
-}
 
-} // anonymous namespace
-
+} // namespace
 #endif // TARGET_OS_IPHONE
 
 namespace {
@@ -1110,7 +957,7 @@ void SDL3GameEngine::pollSDL3Events(void)
 	if (TheMouse && m_SDLWindow) {
 		SDL3Mouse* touchMouse = dynamic_cast<SDL3Mouse*>(TheMouse);
 		if (touchMouse) {
-			updateTouchHold(touchMouse, m_SDLWindow);
+			// No inertial smoothing. Inputs are applied in real time from the current frame.
 		}
 	}
 #endif
