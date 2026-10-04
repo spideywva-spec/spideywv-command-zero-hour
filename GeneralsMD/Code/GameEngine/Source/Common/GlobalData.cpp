@@ -702,7 +702,12 @@ GlobalData::GlobalData()
 	m_waterExtentY = 0.0f;
 	m_waterType = 0;
 	m_featherWater = FALSE;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS/MoltenVK: legacy destination-alpha soft water edge can produce black shoreline bands.
+	m_showSoftWaterEdge = FALSE;
+#else
 	m_showSoftWaterEdge = TRUE;	//display soft water edge
+#endif
 	m_usingWaterTrackEditor = FALSE;
 	m_isWorldBuilder = FALSE;
 
