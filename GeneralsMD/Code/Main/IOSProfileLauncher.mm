@@ -2185,7 +2185,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSString *textureFilter = @[@"Bilinear", @"Trilinear", @"Anisotropic"][MAX(0, MIN(2, self.textureFilterSegment.selectedSegmentIndex))];
 
     NSDictionary<NSString *, NSString *> *zeroHourValues = @{
-        @"AnisotropyLevel": @"16",
+        @"AnisotropyLevel": @[@"2", @"4", @"8", @"16"][MAX(0, MIN(3, self.anisotropySegment.selectedSegmentIndex))],
         @"BuildingOcclusion": self.buildingOcclusionSwitch.on ? @"Yes" : @"No",
         @"Cameos": cameos,
         @"ControlBar": controlBar,
