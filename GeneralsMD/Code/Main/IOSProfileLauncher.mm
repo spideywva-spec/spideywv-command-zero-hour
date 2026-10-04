@@ -291,7 +291,7 @@ NSDictionary<NSString *, NSString *> *DefaultZeroHourSettings()
         @"FogEffects": @"No",
         @"WaterEffects": @"Yes",
         @"ExtraBuildingProps": @"Yes",
-        @"UseShadowVolumes": @"Yes",
+        @"UseShadowVolumes": @"No",
         @"UseShadowDecals": @"Yes",
         @"UseCloudMap": @"No",
         @"UseLightMap": @"Yes",
@@ -299,12 +299,12 @@ NSDictionary<NSString *, NSString *> *DefaultZeroHourSettings()
         @"BuildingOcclusion": @"Yes",
         @"ShowTrees": @"Yes",
         @"ExtraAnimations": @"Yes",
-        @"DynamicLOD": @"No",
+        @"DynamicLOD": @"Yes",
         @"HeatEffects": @"No",
         @"TextureReduction": @"0",
         @"MaxParticleCount": @"2500",
         @"TextureFilter": @"Anisotropic",
-        @"AnisotropyLevel": @"8"
+        @"AnisotropyLevel": @"16"
     };
 }
 
@@ -2185,7 +2185,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     NSString *textureFilter = @[@"Bilinear", @"Trilinear", @"Anisotropic"][MAX(0, MIN(2, self.textureFilterSegment.selectedSegmentIndex))];
 
     NSDictionary<NSString *, NSString *> *zeroHourValues = @{
-        @"AnisotropyLevel": @"8",
+        @"AnisotropyLevel": @"16",
         @"BuildingOcclusion": self.buildingOcclusionSwitch.on ? @"Yes" : @"No",
         @"Cameos": cameos,
         @"ControlBar": controlBar,
