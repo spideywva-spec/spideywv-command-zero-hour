@@ -1741,14 +1741,14 @@ W3DProjectedShadow* W3DProjectedShadowManager::addShadow(RenderObjClass *robj, S
 				{
 					//need to add this texture without creating it from a real renderobject
 					TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+					if (!w3dTexture)
+					{
+						DEBUG_ASSERTCRASH(false, ("Could not load decal texture"));
+						return nullptr;
+					}
 					w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 					w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 					w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-
-					DEBUG_ASSERTCRASH(w3dTexture != nullptr, ("Could not load decal texture"));
-
-					if (!w3dTexture)
-						return nullptr;
 
 					st = NEW W3DShadowTexture;	// poolify
 					SET_REF_OWNER( st );
@@ -1919,14 +1919,14 @@ W3DProjectedShadow* W3DProjectedShadowManager::createDecalShadow(Shadow::ShadowT
 	{
 		//need to add this texture without creating it from a real renderobject
 		TextureClass *w3dTexture=WW3DAssetManager::Get_Instance()->Get_Texture(texture_name);
+		if (!w3dTexture)
+		{
+			DEBUG_ASSERTCRASH(false, ("Could not load decal texture"));
+			return nullptr;
+		}
 		w3dTexture->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 		w3dTexture->Get_Filter().Set_Mip_Mapping(TextureFilterClass::FILTER_TYPE_NONE);
-
-		DEBUG_ASSERTCRASH(w3dTexture != nullptr, ("Could not load decal texture"));
-
-		if (!w3dTexture)
-			return nullptr;
 
 		st = NEW W3DShadowTexture;	// poolify
 		SET_REF_OWNER( st );
