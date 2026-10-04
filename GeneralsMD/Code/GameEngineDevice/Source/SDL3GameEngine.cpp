@@ -375,13 +375,6 @@ void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Event &eve
 			const float moved = SDL_sqrtf(dx * dx + dy * dy);
 
 			if (moved >= TOUCH_MOVE_EPSILON_PX) {
-				const Uint64 nowTicks = SDL_GetTicks();
-				const float dt = SDL_max(0.001f, (float)(nowTicks - s_touch.lastMotionTicks) * 0.001f);
-				const float deltaX = px - s_touch.lastX;
-				const float deltaY = py - s_touch.lastY;
-				s_touch.velocityX = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaX / dt));
-				s_touch.velocityY = SDL_max(-MOMENTUM_MAX_SPEED_PX_PER_SEC, SDL_min(MOMENTUM_MAX_SPEED_PX_PER_SEC, deltaY / dt));
-				s_touch.lastMotionTicks = nowTicks;
 				s_touch.lastX = px;
 				s_touch.lastY = py;
 				const bool selectionArmed =
