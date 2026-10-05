@@ -115,10 +115,16 @@ Real FrameRateLimit::wait(UnsignedInt maxFps)
 	static uint64_t deadline = 0;
 	const uint64_t now = mach_absolute_time();
 
-	if (deadline == 0 || now >= deadline + targetTicks)
+	// Keep one monotonic presentation deadline instead of adding a full
+	// frame delay after an over-budget frame. The old now + targetTicks
+	// recovery path turned a single 16+ ms spike into an extra full-frame
+	// wait, which could produce a visible 60 -> 30 FPS cadence on iOS.
+	if (deadline == 0)
 		deadline = now + targetTicks;
-	else
+	else if (now < deadline)
 		deadline += targetTicks;
+	else
+		deadline = now;
 
 	if (deadline > now)
 		mach_wait_until(deadline);
