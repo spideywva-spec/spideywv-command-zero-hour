@@ -1,5 +1,6 @@
 import Foundation
 import NetworkExtension
+import Darwin
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var socket: URLSessionWebSocketTask?
