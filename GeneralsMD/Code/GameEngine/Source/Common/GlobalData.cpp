@@ -1047,7 +1047,8 @@ GlobalData::GlobalData()
 	m_allowExitOutOfMovies = FALSE;
 	m_loadScreenRender = FALSE;
 
-	m_keyboardDefaultScrollFactor = m_keyboardScrollFactor = 0.5f;
+	// GeneralsX @tuning 05/10/2026: use the intended 1.0x camera scroll default on iOS.
+	m_keyboardDefaultScrollFactor = m_keyboardScrollFactor = 1.0f;
 	m_drawScrollAnchor = FALSE;
 	m_moveScrollAnchor = FALSE;
 	m_scrollAmountCutoff = 10.0f;
