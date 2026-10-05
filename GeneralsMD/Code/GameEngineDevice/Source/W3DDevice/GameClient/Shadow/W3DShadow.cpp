@@ -224,7 +224,9 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 			projectedInfo = *shadowInfo;
 		projectedInfo.m_type = SHADOW_PROJECTION;
 		projectedInfo.m_ShadowName[0] = '\0';
-		projectedInfo.allowUpdates = TRUE;
+		// Generated projection is only a compatibility fallback. Keep the
+        // shadow texture static and update projection when the caster moves.
+        projectedInfo.allowUpdates = FALSE;
 
 		Shadow *projectedShadow =
 			(Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &projectedInfo, draw);
