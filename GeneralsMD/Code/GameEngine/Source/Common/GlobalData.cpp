@@ -675,10 +675,8 @@ GlobalData::GlobalData()
 	m_useCloudPlane = FALSE;
 	m_downwindAngle = ( -0.785f );//Northeast!
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-	// iOS performance profile: projected 2D shadows are the default.
-	// They keep unit/building shadows visible while avoiding the heavier
-	// stencil/volume path. Options.ini can explicitly enable 3D volumes.
-	// iOS visual profile: enable both shadow paths by default so unit/building shadows are visible.
+	// iOS defaults: keep both shadow paths available, but let Options.ini /
+	// the launcher switches decide which one is actually enabled.
 	m_useShadowVolumes = TRUE;
 	m_useShadowDecals = TRUE;
 #else
