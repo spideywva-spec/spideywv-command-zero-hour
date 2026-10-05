@@ -36,6 +36,10 @@
 #include <stdlib.h>
 #include <windows.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "Lib/BaseType.h"
 
@@ -474,7 +478,18 @@ Bool W3DView::movePivotToGround()
 		buildCameraPosition(sourcePos, targetPos);
 		const Vector3 delta = targetPos - sourcePos;
 
-		if (fabs(delta.Z) > 0.1f)
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+		// iOS touch scrolling must not get an extra lateral correction from
+		// terrain-height tracking. That correction changes m_pos.x/y while the
+		// finger is already driving the camera and is visible as a small camera
+		// snap/jump on uneven terrain. Keep the smooth Z correction, but defer
+		// the pivot repositioning until the finger stops.
+		const Bool isUserScrolling = m_scrollAmount.lengthSqr() > FLT_EPSILON;
+#else
+		const Bool isUserScrolling = false;
+#endif
+
+		if (fabs(delta.Z) > 0.1f && !isUserScrolling)
 		{
 			Vector2 groundLevelCenter;
 			Vector2 terrainHeightCenter;
