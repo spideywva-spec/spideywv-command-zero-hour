@@ -1721,8 +1721,19 @@ W3DProjectedShadow* W3DProjectedShadowManager::addShadow(RenderObjClass *robj, S
 	Char texture_name[ARRAY_SIZE(shadowInfo->m_ShadowName)];
 
 
-	if (!m_dynamicRenderTarget || !robj || !TheGlobalData->m_useShadowDecals)
-		return nullptr;	//right now we require hardware render-to-texture support
+	// A plain SHADOW_DECAL only samples the premade shadow texture (shadow.tga);
+	// it does not render into the temporary 512x512 target.  Requiring the render
+	// target here made iOS lose all decal shadows when Metal/DXVK could not create
+	// that optional target, even though the actual decal path was fully usable.
+	if (!robj || !TheGlobalData->m_useShadowDecals)
+		return nullptr;
+
+	const Bool needsRenderTarget =
+		shadowInfo == nullptr ||
+		!(shadowInfo->m_type & SHADOW_DECAL);
+
+	if (needsRenderTarget && !m_dynamicRenderTarget)
+		return nullptr;	// projected shadows require render-to-texture support
 
 
 	if (shadowInfo)
