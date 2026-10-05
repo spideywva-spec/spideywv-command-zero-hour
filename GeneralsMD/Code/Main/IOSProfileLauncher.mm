@@ -1427,11 +1427,13 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         GXProfileLauncherViewController *strongSelf = weakSelf;
         if (!strongSelf) return;
-        strongSelf.networkStartButton.enabled = YES;
-        strongSelf.networkStatus.text = [NSString stringWithFormat:
-            @"✓ Виртуальная LAN подключена\nIP: %@\n%@",
-            virtualIP,
-            host ? @"Ты HOST. Дождись игроков и запускай игру." : @"Ты подключён к HOST."];
+        BOOL connected = GeneralsXVPNIsConnected();
+        strongSelf.networkStartButton.enabled = connected;
+        strongSelf.networkStatus.text = connected
+            ? [NSString stringWithFormat:@"✓ Виртуальная LAN подключена\\nIP: %@\\n%@",
+               virtualIP,
+               host ? @"Ты HOST. Дождись игроков и запускай игру." : @"Ты подключён к HOST."]
+            : @"⏳ Network Extension ещё подключается. Нажми «Обновить» через секунду.";
     });
 }
 
