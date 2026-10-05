@@ -50,6 +50,9 @@
 #include "WW3D2/statistics.h"
 #include "Common/Debug.h"
 #include "Common/PerfTimer.h"
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #define SUN_DISTANCE_FROM_GROUND	10000.0f	//distance of sun (our only light source).
 
@@ -196,6 +199,22 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 		if (TheW3DVolumetricShadowManager)
 			return (Shadow *)TheW3DVolumetricShadowManager->addShadow(robj, shadowInfo, draw);
 	}
+
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// A13/iOS: keep object and building shadows, but avoid the expensive stencil
+	// shadow-volume pass. Convert volume casters to the existing batched shadow.tga
+	// projected-decal path when volumetric shadows are disabled.
+	if ((type & SHADOW_VOLUME) && !TheGlobalData->m_useShadowVolumes &&
+		TheGlobalData->m_useShadowDecals && TheW3DProjectedShadowManager)
+	{
+		Shadow::ShadowTypeInfo decalInfo;
+		if (shadowInfo)
+			decalInfo = *shadowInfo;
+		decalInfo.m_type = (ShadowType)SHADOW_DECAL;
+		decalInfo.m_ShadowName[0] = '\\0';
+		return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &decalInfo, draw);
+	}
+#endif
 
 	if ((type & (SHADOW_PROJECTION | SHADOW_DYNAMIC_PROJECTION | SHADOW_DECAL | SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL)) &&
 		TheGlobalData->m_useShadowDecals)
