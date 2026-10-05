@@ -3,6 +3,7 @@
 
 const http = require("http");
 const crypto = require("crypto");
+const { WebSocketServer, WebSocket } = require("ws");
 const fs = require("fs");
 const path = require("path");
 
@@ -19,6 +20,7 @@ const lobbies = new Map();
 const users = new Map();
 const friends = new Map();
 const requests = new Map();
+const vpnPeers = new Map();
 
 const str = (v, n) => String(v ?? "").trim().slice(0, n);
 const num = (v, a, b, d) => {
@@ -27,6 +29,33 @@ const num = (v, a, b, d) => {
 };
 const makeId = () => crypto.randomBytes(12).toString("hex");
 const makeLobbyId = () => String(crypto.randomBytes(6).readUIntBE(0, 6));
+const vpnRelayURL = () => {
+  if (process.env.VPN_PUBLIC_WS_URL) return process.env.VPN_PUBLIC_WS_URL;
+  const host = process.env.RENDER_EXTERNAL_HOSTNAME;
+  if (host) return "wss://" + host + "/v1/vpn";
+  if (ORIGIN.startsWith("https://")) return "wss://" + ORIGIN.slice(8) + "/v1/vpn";
+  if (ORIGIN.startsWith("http://")) return "ws://" + ORIGIN.slice(7) + "/v1/vpn";
+  return "";
+};
+const vpnIPForPlayer = index => "10.42.0." + (index + 1);
+function vpnInfo(lobby, playerToken) {
+  const player = lobby.players.find(x => x.id === playerToken);
+  return player ? {
+    relayURL: vpnRelayURL(),
+    lobbyId: lobby.id,
+    playerToken,
+    virtualIP: player.vpnIP
+  } : null;
+}
+function closeVPNPeer(lobbyId, playerToken) {
+  const peers = vpnPeers.get(lobbyId);
+  const ws = peers?.get(playerToken);
+  if (ws) {
+    try { ws.close(1000, "lobby closed"); } catch (_) {}
+    peers.delete(playerToken);
+  }
+  if (peers && peers.size === 0) vpnPeers.delete(lobbyId);
+}
 
 function userPublic(u) {
   return { id: u.id, name: u.name, avatar: u.avatar || "", online: u.online !== false, lastSeen: u.lastSeen || 0 };
@@ -85,7 +114,7 @@ function load() {
 
 function playerPublic(p) {
   const u = users.get(p.userId);
-  return { id: p.id, userId: p.userId || "", name: p.name, avatar: u?.avatar || p.avatar || "", online: u ? u.online !== false : true, host: !!p.host, ready: p.ready !== false };
+  return { id: p.id, userId: p.userId || "", name: p.name, avatar: u?.avatar || p.avatar || "", online: u ? u.online !== false : true, host: !!p.host, ready: p.ready !== false, vpnIP: p.vpnIP || "" };
 }
 
 function pub(l) {
@@ -261,11 +290,11 @@ const srv = http.createServer(async (req, res) => {
         roundPrice: Math.round(num(b.roundPrice, 10000, 200000, 10000)),
         passwordSalt: pw ? crypto.randomBytes(16).toString("hex") : "", passwordHash: "",
         createdAt: now, lastSeen: now, state: "waiting", settings: { fog: b.fog !== false, weather: b.weather !== false },
-        players: [{ id: token, userId: user.id, name: user.name, host: true, ready: true, lastSeen: now }]
+        players: [{ id: token, userId: user.id, name: user.name, host: true, ready: true, lastSeen: now, vpnIP: vpnIPForPlayer(0) }]
       };
       if (pw) lobby.passwordHash = crypto.scryptSync(pw, lobby.passwordSalt, 32).toString("hex");
       lobbies.set(lobby.id, lobby); save();
-      return send(res, 201, { lobby: pub(lobby), playerToken: token });
+      return send(res, 201, { lobby: pub(lobby), playerToken: token, vpn: vpnInfo(lobby, token) });
     }
 
     if (p[0] === "v1" && p[1] === "lobbies" && p[2] && req.method === "POST" && p[3] === "join") {
@@ -280,9 +309,9 @@ const srv = http.createServer(async (req, res) => {
       const user = ensureUser({ userId: b.userId, name: b.playerName, avatar: b.avatar });
       if (lobby.players.some(x => x.userId === user.id)) return send(res, 409, { error: "already_in_lobby" });
       const token = makeId();
-      lobby.players.push({ id: token, userId: user.id, name: user.name, host: false, ready: true, lastSeen: Date.now() });
+      lobby.players.push({ id: token, userId: user.id, name: user.name, host: false, ready: true, lastSeen: Date.now(), vpnIP: vpnIPForPlayer(lobby.players.length) });
       lobby.lastSeen = Date.now(); save();
-      return send(res, 200, { lobby: pub(lobby), playerToken: token });
+      return send(res, 200, { lobby: pub(lobby), playerToken: token, vpn: vpnInfo(lobby, token) });
     }
 
     if (p[0] === "v1" && p[1] === "lobbies" && p[2] && req.method === "POST" && p[3] === "heartbeat") {
@@ -339,6 +368,7 @@ const srv = http.createServer(async (req, res) => {
       if (hit.error) return send(res, 401, { error: hit.error });
       const wasHost = hit.p.host;
       hit.l.players = hit.l.players.filter(x => x.id !== hit.p.id);
+      closeVPNPeer(hit.l.id, hit.p.id);
       if (wasHost) { if (hit.l.players.length) hit.l.players[0].host = true; else lobbies.delete(hit.l.id); }
       hit.l.lastSeen = Date.now(); save();
       return send(res, 200, { ok: true, lobby: lobbies.has(hit.l.id) ? pub(hit.l) : null });
@@ -349,6 +379,71 @@ const srv = http.createServer(async (req, res) => {
     console.error("REQUEST ERROR", e);
     return send(res, e.message === "invalid_json" ? 400 : 500, { error: e.message || "server_error" });
   }
+});
+
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
+
+wss.on("connection", (ws) => {
+  let lobbyId = "";
+  let playerToken = "";
+
+  ws.on("message", (data, isBinary) => {
+    if (!lobbyId) {
+      if (isBinary) return ws.close(1008, "join required");
+      let join;
+      try { join = JSON.parse(data.toString("utf8")); } catch (_) { return ws.close(1008, "invalid join"); }
+      if (join?.type !== "join") return ws.close(1008, "join required");
+
+      const lobby = lobbies.get(str(join.lobbyId, 64));
+      const token = str(join.playerToken, 128);
+      const player = lobby?.players.find(x => x.id === token);
+      if (!lobby || !player || !["waiting", "playing"].includes(lobby.state)) {
+        return ws.close(1008, "invalid lobby");
+      }
+      if (join.virtualIP && join.virtualIP !== player.vpnIP) {
+        return ws.close(1008, "invalid virtual ip");
+      }
+
+      lobbyId = lobby.id;
+      playerToken = token;
+      if (!vpnPeers.has(lobbyId)) vpnPeers.set(lobbyId, new Map());
+      vpnPeers.get(lobbyId).set(playerToken, ws);
+      updatePresence(player);
+      lobby.lastSeen = Date.now();
+      ws.send(JSON.stringify({ type: "ready", virtualIP: player.vpnIP, relayURL: vpnRelayURL() }));
+      return;
+    }
+
+    if (!isBinary) return;
+    const peers = vpnPeers.get(lobbyId);
+    if (!peers) return;
+
+    for (const [token, peer] of peers) {
+      if (token === playerToken || peer.readyState !== WebSocket.OPEN) continue;
+      try { peer.send(data, { binary: true }); } catch (_) {}
+    }
+  });
+
+  ws.on("close", () => {
+    if (!lobbyId) return;
+    const peers = vpnPeers.get(lobbyId);
+    if (peers?.get(playerToken) === ws) peers.delete(playerToken);
+    if (peers && peers.size === 0) vpnPeers.delete(lobbyId);
+  });
+
+  ws.on("error", () => {
+    try { ws.close(); } catch (_) {}
+  });
+});
+
+srv.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url, "http://localhost");
+  if (url.pathname !== "/v1/vpn") {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, ws => wss.emit("connection", ws, req));
 });
 
 srv.listen(PORT, HOST, () => console.log("GeneralsXZH Online API v3 listening on " + HOST + ":" + PORT));
