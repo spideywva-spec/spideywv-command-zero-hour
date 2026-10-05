@@ -19,6 +19,12 @@ targets:
     platform: iOS
     sources:
       - path: Stub
+      - path: ../GeneralsMD/Code/Main/AppleOnlineTunnel.mm
+    dependencies:
+      - target: GeneralsXZHPacketTunnel
+        embed: true
+    entitlements:
+      path: Stub/GeneralsXZH.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.ammaar.generalszh
@@ -46,3 +52,19 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIApplicationSupportsIndirectInputEvents: true
         NSLocalNetworkUsageDescription: "Used for LAN multiplayer game discovery."
+
+  GeneralsXZHPacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PacketTunnel
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dvorov.generalszh.online.PacketTunnel
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: NO
+        INFOPLIST_FILE: PacketTunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PacketTunnel/PacketTunnel.entitlements
+    info:
+      path: PacketTunnel/Info.plist
