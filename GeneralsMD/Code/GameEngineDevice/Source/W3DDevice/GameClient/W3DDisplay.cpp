@@ -1249,48 +1249,11 @@ const UnsignedInt START_CUMU_FRAME = LOGICFRAMES_PER_SECOND / 2;	// skip first h
 void W3DDisplay::updateAverageFPS()
 {
 #if defined(__APPLE__)
-	// Pair periodic resource counts with the process footprint trail. Avoid
-	// per-frame hash scans, and restart sampling when a new map resets time.
-	static UnsignedInt nextResourceFrame = 0;
-	static UnsignedInt nextMemoryTrimFrame = 1800;
-	static UnsignedInt lastResourceFrame = 0;
-	if (TheGameLogic && m_assetManager)
-	{
-		const UnsignedInt frame = TheGameLogic->getFrame();
-		if (frame < lastResourceFrame)
-		{
-			nextResourceFrame = 0;
-			nextMemoryTrimFrame = 1800;
-		}
-		if (TheGameLogic->isInGame() && !TheGameLogic->isInShellGame() && frame >= nextResourceFrame)
-		{
-			fprintf(stderr, "[RESOURCE-DIAG] sampleFrame=%u\n", (unsigned)frame);
-			m_assetManager->Log_Resource_Summary("match-periodic");
-			Log_Render_Memory_Summary("match-periodic", frame);
-			nextResourceFrame = frame + 300;
-		}
-
-		if (TheGameLogic->isInGame() && !TheGameLogic->isInShellGame() && frame >= nextMemoryTrimFrame)
-		{
-			m_assetManager->Log_Resource_Summary("match-gc-before");
-			Log_Render_Memory_Summary("match-gc-before", frame);
-			m_assetManager->Release_Unused_Assets();
-			m_assetManager->Log_Resource_Summary("match-gc-after");
-			Log_Render_Memory_Summary("match-gc-after", frame);
-
-			Int poolBytes = 0;
-			if (TheMemoryPoolFactory != nullptr)
-				poolBytes = TheMemoryPoolFactory->releaseEmpties();
-			const size_t mallocBytes = malloc_zone_pressure_relief(nullptr, 0);
-			fprintf(stderr,
-			        "[MEMORY-GC] frame=%u poolReleasedMB=%.1f mallocReliefMB=%.1f\n",
-			        (unsigned)frame,
-			        (double)poolBytes / (1024.0 * 1024.0),
-			        (double)mallocBytes / (1024.0 * 1024.0));
-			nextMemoryTrimFrame = frame + 1800;
-		}
-		lastResourceFrame = frame;
-	}
+	// Do not run asset enumeration, malloc-zone walks, or pool cleanup from the
+	// render thread on iOS. Those operations are intentionally expensive and
+	// create periodic frame-time spikes exactly when a match is already busy.
+	// Resource diagnostics remain available through the dedicated diagnostics
+	// paths instead of being mixed into the frame-rate sampling loop.
 #endif
 	constexpr const Int FPS_HISTORY_SIZE = 30;
 
