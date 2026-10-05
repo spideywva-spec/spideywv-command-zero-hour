@@ -627,7 +627,7 @@ void GameEngine::init()
 					"  ; Keyboard scroll - vanilla 0.5 is sluggish, double it.\n"
 					"  KeyboardScrollSpeedFactor = 1.0\n"
 					"  ; ~5% more terrain drawn at max zoom to fix terrain pop-in.\n"
-					"  TerrainDrawDistanceScale = 1.35\n"
+					"  TerrainDrawDistanceScale = 1.45\n"
 					"End\n"
 				);
 				fclose(f);
