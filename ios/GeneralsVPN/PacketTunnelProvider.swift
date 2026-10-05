@@ -103,9 +103,9 @@ private enum PacketTunnelError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidConfiguration: return "Invalid Generals virtual LAN configuration."
-        case .providerGone: return "Generals virtual LAN provider stopped."
-        case .connectionClosed: return "Generals virtual LAN relay connection closed."
+        case .invalidConfiguration: return "Invalid VPN Render test configuration."
+        case .providerGone: return "VPN Render test provider stopped."
+        case .connectionClosed: return "VPN Render test relay connection closed."
         }
     }
 }
