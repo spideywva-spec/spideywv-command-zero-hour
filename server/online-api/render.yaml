@@ -1,3 +1,4 @@
+# Render deploy trigger: 2026-10-06
 services:
   - type: web
     name: generalsxzh-online-api
