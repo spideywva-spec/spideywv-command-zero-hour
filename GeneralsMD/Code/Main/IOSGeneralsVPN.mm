@@ -68,8 +68,8 @@ void ConfigureAndStart(NSString *relayURL, NSString *lobbyID,
                     return;
                 }
 
-                gConnected.store(true);
-                fprintf(stderr, "INFO: Generals embedded VPN started at %s\\n", virtualIP.UTF8String);
+                gConnected.store([manager.connection status] == NEVPNStatusConnected);
+                fprintf(stderr, "INFO: Generals embedded VPN start requested at %s\\n", virtualIP.UTF8String);
             }];
         }];
     }];
