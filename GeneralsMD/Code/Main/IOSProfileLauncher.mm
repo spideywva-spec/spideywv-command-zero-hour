@@ -1256,7 +1256,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         : @"LAN: готово к поиску игроков.",
         13.0, UIFontWeightSemibold);
     self.networkStatus.textAlignment = NSTextAlignmentLeft;
-    self.networkStatus.textColor = [UIColor colorWithWhite:0.70 alpha:1.0);
+    self.networkStatus.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
 
     self.networkLobbyList = [[UIStackView alloc] init];
     self.networkLobbyList.translatesAutoresizingMaskIntoConstraints = NO;
