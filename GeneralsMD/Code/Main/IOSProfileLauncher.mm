@@ -2474,7 +2474,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.cameraPitchSlider.value = 37.0f;
         self.enforceMaxSwitch.on = NO;
         self.scrollSpeedSlider.value = 1.0f;
-        self.drawDistanceSlider.value = 1.35f;
+        self.drawDistanceSlider.value = 1.45f;
         self.fpsLimitSwitch.on = YES;
         self.fpsSlider.value = 60.0f;
         self.settingsStatus.text = @"Используются настройки камеры по умолчанию.";
