@@ -678,7 +678,8 @@ GlobalData::GlobalData()
 	// iOS performance profile: projected 2D shadows are the default.
 	// They keep unit/building shadows visible while avoiding the heavier
 	// stencil/volume path. Options.ini can explicitly enable 3D volumes.
-	m_useShadowVolumes = FALSE;
+	// iOS visual profile: enable both shadow paths by default so unit/building shadows are visible.
+	m_useShadowVolumes = TRUE;
 	m_useShadowDecals = TRUE;
 #else
 	m_useShadowVolumes = FALSE;
