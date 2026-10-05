@@ -211,7 +211,7 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 		if (shadowInfo)
 			decalInfo = *shadowInfo;
 		decalInfo.m_type = (ShadowType)SHADOW_DECAL;
-		decalInfo.m_ShadowName[0] = '\\0';
+		decalInfo.m_ShadowName[0] = 0;
 		return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &decalInfo, draw);
 	}
 #endif
