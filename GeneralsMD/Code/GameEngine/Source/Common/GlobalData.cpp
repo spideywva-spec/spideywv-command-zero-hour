@@ -1267,6 +1267,12 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	TheWritableGlobalData->m_enableDynamicLOD = optionPref.getDynamicLODEnabled();
 	TheWritableGlobalData->m_useShadowVolumes = optionPref.get3DShadowsEnabled();
 	TheWritableGlobalData->m_useShadowDecals = optionPref.get2DShadowsEnabled();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS safety default: if an old Options.ini disabled both shadow paths,
+	// keep the lightweight projected path enabled so units/buildings still cast shadows.
+	if (!TheWritableGlobalData->m_useShadowVolumes && !TheWritableGlobalData->m_useShadowDecals)
+		TheWritableGlobalData->m_useShadowDecals = TRUE;
+#endif
 	TheWritableGlobalData->m_enableBehindBuildingMarkers = optionPref.getBuildingOcclusionEnabled();
 	TheWritableGlobalData->m_maxParticleCount = optionPref.getParticleCap();
 	TheWritableGlobalData->m_textureReductionFactor = optionPref.getTextureReduction();
