@@ -489,6 +489,11 @@ UIButton *MakeButton(NSString *title, id target, SEL action)
 @property(nonatomic, strong) UIView *diagnosticsView;
 @property(nonatomic, strong) UIView *modalBackdrop;
 @property(nonatomic, strong) UIView *profileView;
+@property(nonatomic, strong) UIView *networkView;
+@property(nonatomic, strong) UIView *networkModeView;
+@property(nonatomic, strong) UILabel *networkStatus;
+@property(nonatomic, strong) UITextField *networkNameField;
+@property(nonatomic, strong) UITextField *networkPasswordField;
 @property(nonatomic, strong) UILabel *diagnosticsText;
 @property(nonatomic, strong) UIView *gameFileView;
 @property(nonatomic, strong) UIProgressView *gameFileProgress;
@@ -543,6 +548,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     [self buildSettings];
     [self buildDiagnostics];
     [self buildProfileModal];
+    [self buildNetworkMenu];
 }
 
 - (void)buildMenu
@@ -787,9 +793,16 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
                                                    action:@selector(showDiagnostics)
                                                accentColor:[UIColor colorWithRed:0.38 green:0.90 blue:0.72 alpha:1.0]];
 
+    UIButton *networkAction = [self makeLauncherCard:@"ONLINE / ЛОКАЛЬНАЯ СЕТЬ"
+                                             subtitle:@"Лобби, пароль, LAN и подключение"
+                                                icon:@"network"
+                                               action:@selector(showNetworkMenu)
+                                           accentColor:[UIColor colorWithRed:0.95 green:0.55 blue:0.22 alpha:1.0]];
+
     [actions addArrangedSubview:gameFileAction];
     [actions addArrangedSubview:settingsAction];
     [actions addArrangedSubview:diagnosticsAction];
+    [actions addArrangedSubview:networkAction];
     [content addArrangedSubview:actions];
 
     UIView *systemCard = [[UIView alloc] init];
@@ -1027,6 +1040,187 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     row.backgroundColor = [UIColor colorWithWhite:0.055 alpha:1.0];
     row.layer.cornerRadius = 9.0;
     return row;
+}
+
+- (void)buildNetworkMenu
+{
+    self.networkView = [[UIView alloc] init];
+    self.networkView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.networkView.backgroundColor = [UIColor colorWithWhite:0.015 alpha:0.98];
+    self.networkView.layer.cornerRadius = 28.0;
+    self.networkView.layer.borderWidth = 1.0;
+    self.networkView.layer.borderColor = [UIColor colorWithRed:0.95 green:0.55 blue:0.22 alpha:0.55].CGColor;
+    self.networkView.hidden = YES;
+    MakeGlassBlurView(self.networkView);
+    [self.view addSubview:self.networkView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.networkView.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:20.0],
+        [self.networkView.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-20.0],
+        [self.networkView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:14.0],
+        [self.networkView.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-14.0]
+    ]];
+
+    UILabel *title = MakeLabel(@"СЕТЕВАЯ ИГРА", 27.0, UIFontWeightBold);
+    title.textAlignment = NSTextAlignmentLeft;
+    UILabel *subtitle = MakeLabel(@"Выберите отдельный режим.", 13.0, UIFontWeightRegular);
+    subtitle.textAlignment = NSTextAlignmentLeft;
+    subtitle.textColor = [UIColor colorWithWhite:0.62 alpha:1.0];
+
+    UIButton *online = MakeButton(@"ONLINE", self, @selector(showOnlineLobby));
+    UIButton *lan = MakeButton(@"ЛОКАЛЬНАЯ СЕТЬ (LAN)", self, @selector(showLocalLobby));
+    UIButton *back = MakeButton(@"Назад", self, @selector(hideNetworkMenu));
+
+    online.backgroundColor = [UIColor colorWithRed:0.10 green:0.32 blue:0.62 alpha:0.92];
+    lan.backgroundColor = [UIColor colorWithRed:0.12 green:0.38 blue:0.25 alpha:0.92];
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle, online, lan, back]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 14.0;
+    [self.networkView addSubview:stack];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:self.networkView.leadingAnchor constant:28.0],
+        [stack.trailingAnchor constraintEqualToAnchor:self.networkView.trailingAnchor constant:-28.0],
+        [stack.centerYAnchor constraintEqualToAnchor:self.networkView.centerYAnchor]
+    ]];
+}
+
+- (void)showNetworkMenu
+{
+    self.menuStack.hidden = YES;
+    self.settingsView.hidden = YES;
+    self.diagnosticsView.hidden = YES;
+    self.profileView.hidden = YES;
+    self.networkView.hidden = NO;
+}
+
+- (void)hideNetworkMenu
+{
+    self.networkView.hidden = YES;
+    self.menuStack.hidden = NO;
+}
+
+- (void)showOnlineLobby
+{
+    [self showNetworkMode:YES];
+}
+
+- (void)showLocalLobby
+{
+    [self showNetworkMode:NO];
+}
+
+- (void)showNetworkMode:(BOOL)online
+{
+    self.networkModeView = [[UIView alloc] init];
+    self.networkModeView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.networkModeView.backgroundColor = [UIColor colorWithWhite:0.015 alpha:0.99];
+    self.networkModeView.layer.cornerRadius = 28.0;
+    self.networkModeView.layer.borderWidth = 1.0;
+    self.networkModeView.layer.borderColor = (online
+        ? [UIColor colorWithRed:0.20 green:0.55 blue:1.0 alpha:0.60]
+        : [UIColor colorWithRed:0.20 green:0.85 blue:0.45 alpha:0.60]).CGColor;
+    MakeGlassBlurView(self.networkModeView);
+    [self.view addSubview:self.networkModeView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.networkModeView.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:14.0],
+        [self.networkModeView.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-14.0],
+        [self.networkModeView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:10.0],
+        [self.networkModeView.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-10.0]
+    ]];
+
+    UILabel *title = MakeLabel(online ? @"ONLINE — ЛОББИ" : @"ЛОКАЛЬНАЯ СЕТЬ — LAN",
+                               25.0, UIFontWeightBold);
+    title.textAlignment = NSTextAlignmentLeft;
+
+    UILabel *hint = MakeLabel(online
+        ? @"Создай комнату, задай название и пароль или выбери чужое лобби."
+        : @"Создай игру или найди игры игроков в той же локальной сети.",
+        13.0, UIFontWeightRegular);
+    hint.textAlignment = NSTextAlignmentLeft;
+    hint.textColor = [UIColor colorWithWhite:0.62 alpha:1.0];
+
+    self.networkNameField = [[UITextField alloc] init];
+    self.networkNameField.translatesAutoresizingMaskIntoConstraints = NO;
+    self.networkNameField.placeholder = @"Название игры / лобби";
+    self.networkNameField.textColor = UIColor.whiteColor;
+    self.networkNameField.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.9];
+    self.networkNameField.layer.cornerRadius = 10.0;
+    self.networkNameField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,12,1)];
+    self.networkNameField.leftViewMode = UITextFieldViewModeAlways;
+
+    self.networkPasswordField = [[UITextField alloc] init];
+    self.networkPasswordField.translatesAutoresizingMaskIntoConstraints = NO;
+    self.networkPasswordField.placeholder = @"Пароль";
+    self.networkPasswordField.textColor = UIColor.whiteColor;
+    self.networkPasswordField.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.9];
+    self.networkPasswordField.secureTextEntry = YES;
+    self.networkPasswordField.layer.cornerRadius = 10.0;
+    self.networkPasswordField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,12,1)];
+    self.networkPasswordField.leftViewMode = UITextFieldViewModeAlways;
+
+    UIButton *create = MakeButton(online ? @"СОЗДАТЬ ONLINE ЛОББИ" : @"СОЗДАТЬ LAN ИГРУ",
+                                   self, @selector(networkCreatePressed));
+    UIButton *refresh = MakeButton(online ? @"ОБНОВИТЬ СПИСОК ЛОББИ" : @"НАЙТИ ИГРЫ В ЛОКАЛЬНОЙ СЕТИ",
+                                    self, @selector(networkRefreshPressed));
+    UIButton *join = MakeButton(@"ПОДКЛЮЧИТЬСЯ К ВЫБРАННОЙ ИГРЕ",
+                                 self, @selector(networkJoinPressed));
+    UIButton *back = MakeButton(@"Назад", self, @selector(networkModeBackPressed));
+
+    self.networkStatus = MakeLabel(online
+        ? @"ONLINE: готово к созданию/поиску лобби."
+        : @"LAN: готово к поиску игроков.",
+        13.0, UIFontWeightSemibold);
+    self.networkStatus.textAlignment = NSTextAlignmentLeft;
+    self.networkStatus.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
+        title, hint, self.networkNameField, self.networkPasswordField,
+        create, refresh, join, self.networkStatus, back
+    ]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 10.0;
+    [self.networkModeView addSubview:stack];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:self.networkModeView.leadingAnchor constant:22.0],
+        [stack.trailingAnchor constraintEqualToAnchor:self.networkModeView.trailingAnchor constant:-22.0],
+        [stack.centerYAnchor constraintEqualToAnchor:self.networkModeView.centerYAnchor],
+        [self.networkNameField.heightAnchor constraintEqualToConstant:48.0],
+        [self.networkPasswordField.heightAnchor constraintEqualToConstant:48.0]
+    ]];
+
+    self.networkView.hidden = YES;
+    self.modalBackdrop.hidden = NO;
+}
+
+- (void)networkCreatePressed
+{
+    self.networkStatus.text = [NSString stringWithFormat:@"Создание лобби: %@ — пароль %@.",
+                               self.networkNameField.text.length ? self.networkNameField.text : @"Без названия",
+                               self.networkPasswordField.text.length ? @"задан" : @"не задан"];
+}
+
+- (void)networkRefreshPressed
+{
+    self.networkStatus.text = @"Обновление списка игр…";
+}
+
+- (void)networkJoinPressed
+{
+    self.networkStatus.text = @"Подключение к выбранному лобби…";
+}
+
+- (void)networkModeBackPressed
+{
+    [self.networkModeView removeFromSuperview];
+    self.networkModeView = nil;
+    self.modalBackdrop.hidden = YES;
+    self.networkView.hidden = NO;
 }
 
 - (void)buildSettings
@@ -2398,243 +2592,3 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.extraAnimationsSwitch.on = SettingBoolValue(values, @"ExtraAnimations", YES);
     self.dynamicLODSwitch.on = SettingBoolValue(values, @"DynamicLOD", NO);
     self.heatEffectsSwitch.on = SettingBoolValue(values, @"HeatEffects", NO);
-
-    NSInteger textureReduction = [SettingValue(values, @"TextureReduction", @"0") integerValue];
-    self.textureQualitySegment.selectedSegmentIndex = MAX(0, MIN(2, textureReduction));
-
-    NSInteger particleCount = [SettingValue(values, @"MaxParticleCount", @"2500") integerValue];
-    self.particleQualitySegment.selectedSegmentIndex = particleCount <= 1200 ? 0 : (particleCount >= 4000 ? 2 : 1);
-
-    NSString *filter = SettingValue(values, @"TextureFilter", @"Anisotropic");
-    self.textureFilterSegment.selectedSegmentIndex =
-        [filter caseInsensitiveCompare:@"Bilinear"] == NSOrderedSame ? 0 :
-        ([filter caseInsensitiveCompare:@"Trilinear"] == NSOrderedSame ? 1 : 2);
-}
-
-- (void)resetНастройки
-{
-    // Reset the visible controls and immediately persist the defaults to the same
-    // Options.ini file consumed by the game. This replaces the old missing selector
-    // that caused the launcher to terminate when the button was pressed.
-    [self resetНастройкиControls];
-    [self saveНастройки];
-    self.settingsStatus.text = @"✓ Настройки сброшены и сохранены. Изменения применятся при следующем запуске игры.";
-    self.settingsStatus.textColor = [UIColor colorWithRed:0.18 green:0.88 blue:0.48 alpha:1.0];
-    fprintf(stderr, "INFO: iOS launcher settings reset to defaults and saved to Options.ini\n");
-}
-
-- (void)resetНастройкиControls
-{
-    [self resetZeroHourSettingsControls];
-
-    self.maxCameraSlider.value = 550.0f;
-    self.minCameraSlider.value = 70.0f;
-    self.cameraPitchSlider.value = 37.0f;
-    self.enforceMaxSwitch.on = NO;
-    self.scrollSpeedSlider.value = 1.0f;
-    self.drawDistanceSlider.value = 1.60f;
-    self.fpsLimitSwitch.on = YES;
-    self.fpsSlider.value = 60.0f;
-    [self settingsSliderChanged:nil];
-    [self fpsLimitChanged:self.fpsLimitSwitch];
-}
-
-- (void)loadНастройкиControls
-{
-    [self loadZeroHourSettingsControls];
-    NSDictionary<NSString *, NSString *> *graphics = ReadKeyValueFile(EngineOptionsPath());
-    self.shadow3DSwitch.on = SettingBoolValue(graphics, @"UseShadowVolumes", YES);
-    self.shadow2DSwitch.on = SettingBoolValue(graphics, @"UseShadowDecals", YES);
-    self.cloudShadowsSwitch.on = SettingBoolValue(graphics, @"UseCloudMap", NO);
-    self.groundLightingSwitch.on = SettingBoolValue(graphics, @"UseLightMap", YES);
-    self.softWaterSwitch.on = SettingBoolValue(graphics, @"ShowSoftWaterEdge", NO);
-    self.buildingOcclusionSwitch.on = SettingBoolValue(graphics, @"BuildingOcclusion", YES);
-    self.showPropsSwitch.on = SettingBoolValue(graphics, @"ShowTrees", YES);
-    self.extraAnimationsSwitch.on = SettingBoolValue(graphics, @"ExtraAnimations", YES);
-    self.dynamicLODSwitch.on = SettingBoolValue(graphics, @"DynamicLOD", NO);
-    self.heatEffectsSwitch.on = SettingBoolValue(graphics, @"HeatEffects", NO);
-    self.textureQualitySegment.selectedSegmentIndex = MAX(0, MIN(2, [SettingValue(graphics, @"TextureReduction", @"0") integerValue]));
-    NSInteger particleCount = [SettingValue(graphics, @"MaxParticleCount", @"2500") integerValue];
-    self.particleQualitySegment.selectedSegmentIndex = particleCount <= 1200 ? 0 : (particleCount >= 4000 ? 2 : 1);
-    NSString *filter = SettingValue(graphics, @"TextureFilter", @"Anisotropic");
-    self.textureFilterSegment.selectedSegmentIndex = [filter caseInsensitiveCompare:@"Bilinear"] == NSOrderedSame ? 0 : ([filter caseInsensitiveCompare:@"Trilinear"] == NSOrderedSame ? 1 : 2);
-    NSInteger anisotropy = [SettingValue(graphics, @"AnisotropyLevel", @"16") integerValue];
-    self.anisotropySegment.selectedSegmentIndex = anisotropy <= 2 ? 0 : (anisotropy <= 4 ? 1 : (anisotropy <= 8 ? 2 : 3));
-    NSInteger aa = [SettingValue(graphics, @"AntiAliasing", @"0") integerValue];
-    self.antiAliasingSegment.selectedSegmentIndex = aa <= 0 ? 0 : (aa <= 2 ? 1 : (aa <= 4 ? 2 : 3));
-
-    NSError *error = nil;
-    NSString *contents = [NSString stringWithContentsOfFile:IOSIPadOverridesPath()
-                                                   encoding:NSUTF8StringEncoding
-                                                      error:&error];
-    if (contents == nil)
-    {
-        self.maxCameraSlider.value = 550.0f;
-        self.minCameraSlider.value = 70.0f;
-        self.cameraPitchSlider.value = 37.0f;
-        self.enforceMaxSwitch.on = NO;
-        self.scrollSpeedSlider.value = 1.0f;
-        self.drawDistanceSlider.value = 1.60f;
-        self.fpsLimitSwitch.on = YES;
-        self.fpsSlider.value = 60.0f;
-        self.settingsStatus.text = @"Используются настройки камеры по умолчанию.";
-        if (error != nil)
-        {
-            fprintf(stderr, "WARNING: iOS launcher could not read iOSIPadOverrides.ini: %s\n",
-                    [[error description] UTF8String]);
-        }
-    }
-    else
-    {
-        self.maxCameraSlider.value = [self floatSetting:@"MaxCameraHeight" contents:contents fallback:550.0f];
-        self.minCameraSlider.value = [self floatSetting:@"MinCameraHeight" contents:contents fallback:70.0f];
-        self.cameraPitchSlider.value = [self floatSetting:@"CameraPitch" contents:contents fallback:37.0f];
-        self.enforceMaxSwitch.on = [self boolSetting:@"EnforceMaxCameraHeight" contents:contents fallback:NO];
-        self.scrollSpeedSlider.value = MAX(0.5f, MIN(2.0f, [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f]));
-        self.drawDistanceSlider.value = MAX(0.5f, MIN(2.0f, [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.60f]));
-        self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
-        self.fpsSlider.value = [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
-        self.settingsStatus.text = @"";
-    }
-
-    [self settingsSliderChanged:nil];
-    [self fpsLimitChanged:self.fpsLimitSwitch];
-}
-
-- (void)showНастройки
-{
-    [self loadНастройкиControls];
-    self.menuStack.hidden = NO;
-    self.diagnosticsView.hidden = YES;
-    self.profileView.hidden = YES;
-    self.modalBackdrop.hidden = NO;
-    self.settingsView.hidden = NO;
-}
-
-- (void)hideНастройки
-{
-    self.settingsView.hidden = YES;
-    self.modalBackdrop.hidden = YES;
-    self.menuStack.hidden = NO;
-}
-
-- (void)settingsSliderChanged:(UISlider *)sender
-{
-    auto snap = [](float value, float step) -> float {
-        return roundf(value / step) * step;
-    };
-
-    self.maxCameraSlider.value = snap(self.maxCameraSlider.value, 10.0f);
-    self.minCameraSlider.value = snap(self.minCameraSlider.value, 5.0f);
-    self.cameraPitchSlider.value = snap(self.cameraPitchSlider.value, 1.0f);
-    self.scrollSpeedSlider.value = MAX(0.5f, MIN(2.0f, snap(self.scrollSpeedSlider.value, 0.1f)));
-    self.drawDistanceSlider.value = MAX(0.5f, MIN(2.0f, snap(self.drawDistanceSlider.value, 0.05f)));
-    self.fpsSlider.value = MAX(60.0f, snap(self.fpsSlider.value, 5.0f));
-
-    self.maxCameraValue.text = [NSString stringWithFormat:@"%.0f", self.maxCameraSlider.value];
-    self.minCameraValue.text = [NSString stringWithFormat:@"%.0f", self.minCameraSlider.value];
-    self.cameraPitchValue.text = [NSString stringWithFormat:@"%.0f°", self.cameraPitchSlider.value];
-    self.scrollSpeedValue.text = [NSString stringWithFormat:@"%.1fx", self.scrollSpeedSlider.value];
-    self.drawDistanceValue.text = [NSString stringWithFormat:@"%.2fx", self.drawDistanceSlider.value];
-    self.fpsValue.text = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
-}
-
-- (void)fpsLimitChanged:(UISwitch *)sender
-{
-    BOOL enabled = self.fpsLimitSwitch.on;
-    self.fpsSlider.enabled = enabled;
-    self.fpsSlider.alpha = enabled ? 1.0 : 0.35;
-    self.fpsValue.alpha = enabled ? 1.0 : 0.35;
-}
-
-@end
-
-const char *GeneralsXRunIOSProfileLauncher()
-{
-    const char *forcedProfile = getenv("GX_LAUNCH_PROFILE");
-    if (IsSupportedProfile(forcedProfile))
-    {
-        strlcpy(gSelectedProfile, forcedProfile, sizeof(gSelectedProfile));
-        fprintf(stderr, "INFO: iOS launcher forced profile: %s\\n", gSelectedProfile);
-        return gSelectedProfile;
-    }
-
-    NSString *autoProfile = BundledAutoLaunchProfile();
-    if (autoProfile != nil)
-    {
-        const char *utf8 = [autoProfile UTF8String];
-        strlcpy(gSelectedProfile, utf8, sizeof(gSelectedProfile));
-
-        if (![autoProfile isEqualToString:@"zerohour"])
-        {
-            fprintf(stderr, "INFO: iOS launcher auto-selected bundled profile: %s\\n",
-                    gSelectedProfile);
-            return gSelectedProfile;
-        }
-
-        fprintf(stderr,
-                "[ZEROHOUR-SETTINGS] dedicated ZeroHour launcher shown for settings access\\n");
-    }
-
-    gLauncherFinished.store(false, std::memory_order_release);
-    if (autoProfile == nil)
-        strlcpy(gSelectedProfile, "vanilla", sizeof(gSelectedProfile));
-
-    __block UIWindow *launcherWindow = nil;
-
-    void (^presentLauncher)(void) = ^{
-        UIWindowScene *scene = FindActiveWindowScene();
-        if (scene != nil)
-        {
-            launcherWindow = [[UIWindow alloc] initWithWindowScene:scene];
-            launcherWindow.frame = scene.coordinateSpace.bounds;
-        }
-        else
-        {
-            launcherWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        }
-
-        launcherWindow.windowLevel = UIWindowLevelNormal + 1.0;
-        launcherWindow.rootViewController = [[GXProfileLauncherViewController alloc] init];
-        [launcherWindow makeKeyAndVisible];
-
-        fprintf(stderr, "INFO: iOS native launcher presented\\n");
-    };
-
-    if ([NSThread isMainThread])
-        presentLauncher();
-    else
-        dispatch_sync(dispatch_get_main_queue(), presentLauncher);
-
-    if ([NSThread isMainThread])
-    {
-        while (!gLauncherFinished.load(std::memory_order_acquire))
-        {
-            @autoreleasepool
-            {
-                [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
-                                      beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
-            }
-        }
-    }
-    else
-    {
-        while (!gLauncherFinished.load(std::memory_order_acquire))
-            usleep(10000);
-    }
-
-    void (^dismissLauncher)(void) = ^{
-        launcherWindow.hidden = YES;
-        launcherWindow.rootViewController = nil;
-        launcherWindow = nil;
-    };
-
-    if ([NSThread isMainThread])
-        dismissLauncher();
-    else
-        dispatch_sync(dispatch_get_main_queue(), dismissLauncher);
-
-    return gSelectedProfile;
-}
-
-#endif
