@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: spideywv-command-zero-hour
+    runtime: node
+    rootDir: server/online-api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /v1/health
+    envVars:
+      - key: PUBLIC_ORIGIN
+        value: "*"
+      - key: LOBBY_TTL_MS
+        value: "7200000"
+      - key: PLAYER_TIMEOUT_MS
+        value: "15000"
