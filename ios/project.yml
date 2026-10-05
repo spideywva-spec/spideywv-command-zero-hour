@@ -20,8 +20,6 @@ targets:
         DEVELOPMENT_TEAM: 7S264298H8
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_UIRequiresFullScreen: NO
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     info:
       path: VPNTest/Info.plist
       properties:
@@ -37,7 +35,7 @@ targets:
       - path: GeneralsVPN/PacketTunnelProvider.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: "$(GX_BUNDLE_ID).VPNRenderExtension"
+        PRODUCT_BUNDLE_IDENTIFIER: me.spideywv.vpnrendertest.VPNRenderExtension
         DEVELOPMENT_TEAM: 7S264298H8
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
