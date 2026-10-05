@@ -1,66 +1,43 @@
-# XcodeGen spec for the GeneralsXZH iOS wrapper app.
-#
-# This target exists to (a) obtain a provisioning profile + signed bundle via
-# normal Xcode automatic signing, and (b) define the Info.plist the game needs
-# (file sharing for assets, landscape-only, fullscreen). The packaging script
-# (package-ios.sh) then replaces the stub executable with the real z_generals
-# engine binary, embeds the runtime dylibs, and re-signs everything.
-# NOTE: the bundle id and development team below are defaults; the packaging
-# script overrides them at build time via GX_BUNDLE_ID / GX_TEAM_ID, so point
-# those at your own Apple Developer account rather than editing this file.
-name: GeneralsXZH
+name: VPNRenderTest
 options:
-  bundleIdPrefix: me.ammaar
+  bundleIdPrefix: me.spideywv
   deploymentTarget:
     iOS: "16.0"
+
 targets:
-  GeneralsXZH:
+  VPNRenderTest:
     type: application
     platform: iOS
     sources:
-      - path: Stub
+      - path: VPNTest
     dependencies:
-      - target: GeneralsVPN
+      - target: VPNRenderExtension
     entitlements:
-      path: Stub/GeneralsXZH.entitlements
-    resources:
-      - path: ../resources/intro.mp4
+      path: VPNTest/VPNRenderTest.entitlements
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.ammaar.generalszh
+        PRODUCT_BUNDLE_IDENTIFIER: me.spideywv.vpnrendertest
         DEVELOPMENT_TEAM: 7S264298H8
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_UIRequiresFullScreen: YES
-        ENABLE_BITCODE: NO
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UIRequiresFullScreen: NO
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
     info:
-      path: Stub/Info.plist
+      path: VPNTest/Info.plist
       properties:
-        CFBundleDisplayName: Generals ZH
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "10"
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
-        UIRequiresFullScreen: true
-        UIStatusBarHidden: true
-        UIViewControllerBasedStatusBarAppearance: false
-        CADisableMinimumFrameDurationOnPhone: true
-        UILaunchStoryboardName: ""
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UIApplicationSupportsIndirectInputEvents: true
-        NSLocalNetworkUsageDescription: "Used for LAN multiplayer game discovery."
+        CFBundleDisplayName: VPN Render Test
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSLocalNetworkUsageDescription: "Used to test the virtual VPN network."
 
-  GeneralsVPN:
+  VPNRenderExtension:
     type: app-extension
     platform: iOS
     sources:
       - path: GeneralsVPN/PacketTunnelProvider.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: "$(GX_BUNDLE_ID).GeneralsVPN"
+        PRODUCT_BUNDLE_IDENTIFIER: "$(GX_BUNDLE_ID).VPNRenderExtension"
         DEVELOPMENT_TEAM: 7S264298H8
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
