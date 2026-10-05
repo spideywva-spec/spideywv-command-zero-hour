@@ -291,7 +291,7 @@ NSDictionary<NSString *, NSString *> *DefaultZeroHourSettings()
         @"FogEffects": @"No",
         @"WaterEffects": @"Yes",
         @"ExtraBuildingProps": @"Yes",
-        @"UseShadowVolumes": @"No",
+        @"UseShadowVolumes": @"Yes",
         @"UseShadowDecals": @"Yes",
         @"UseCloudMap": @"No",
         @"UseLightMap": @"Yes",
@@ -2159,8 +2159,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
             self.minCameraSlider.value,
             self.cameraPitchSlider.value,
             self.enforceMaxSwitch.on ? @"Yes" : @"No",
-            MAX(1.0f, self.scrollSpeedSlider.value),
-            MAX(1.45f, self.drawDistanceSlider.value),
+            self.scrollSpeedSlider.value,
+            self.drawDistanceSlider.value,
             self.fpsLimitSwitch.on ? @"Yes" : @"No",
             MAX(60.0f, self.fpsSlider.value)];
 
@@ -2247,8 +2247,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"MaxCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.maxCameraSlider.value];
     gameOptions[@"MinCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.minCameraSlider.value];
     gameOptions[@"CameraPitch"] = [NSString stringWithFormat:@"%.1f", self.cameraPitchSlider.value];
-    gameOptions[@"TerrainDrawDistanceScale"] = [NSString stringWithFormat:@"%.2f", MAX(1.45f, self.drawDistanceSlider.value)];
-    gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(MAX(1.0f, self.scrollSpeedSlider.value) * 100.0f)];
+    gameOptions[@"TerrainDrawDistanceScale"] = [NSString stringWithFormat:@"%.2f", self.drawDistanceSlider.value];
+    gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(self.scrollSpeedSlider.value * 100.0f)];
 
     NSError *optionsError = nil;
     BOOL canonicalOptionsOK = WriteKeyValueFile(EngineOptionsPath(), gameOptions, &optionsError);
@@ -2432,7 +2432,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.cameraPitchSlider.value = 37.0f;
     self.enforceMaxSwitch.on = NO;
     self.scrollSpeedSlider.value = 1.0f;
-    self.drawDistanceSlider.value = 1.45f;
+    self.drawDistanceSlider.value = 1.60f;
     self.fpsLimitSwitch.on = YES;
     self.fpsSlider.value = 60.0f;
     [self settingsSliderChanged:nil];
@@ -2474,7 +2474,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.cameraPitchSlider.value = 37.0f;
         self.enforceMaxSwitch.on = NO;
         self.scrollSpeedSlider.value = 1.0f;
-        self.drawDistanceSlider.value = 1.45f;
+        self.drawDistanceSlider.value = 1.60f;
         self.fpsLimitSwitch.on = YES;
         self.fpsSlider.value = 60.0f;
         self.settingsStatus.text = @"Используются настройки камеры по умолчанию.";
@@ -2490,8 +2490,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.minCameraSlider.value = [self floatSetting:@"MinCameraHeight" contents:contents fallback:70.0f];
         self.cameraPitchSlider.value = [self floatSetting:@"CameraPitch" contents:contents fallback:37.0f];
         self.enforceMaxSwitch.on = [self boolSetting:@"EnforceMaxCameraHeight" contents:contents fallback:NO];
-        self.scrollSpeedSlider.value = [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f];
-        self.drawDistanceSlider.value = [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.45f];
+        self.scrollSpeedSlider.value = MAX(0.5f, MIN(2.0f, [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f]));
+        self.drawDistanceSlider.value = MAX(0.5f, MIN(2.0f, [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.60f]));
         self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
         self.fpsSlider.value = [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
         self.settingsStatus.text = @"";
@@ -2527,8 +2527,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.maxCameraSlider.value = snap(self.maxCameraSlider.value, 10.0f);
     self.minCameraSlider.value = snap(self.minCameraSlider.value, 5.0f);
     self.cameraPitchSlider.value = snap(self.cameraPitchSlider.value, 1.0f);
-    self.scrollSpeedSlider.value = MAX(1.0f, snap(self.scrollSpeedSlider.value, 0.1f));
-    self.drawDistanceSlider.value = MAX(1.45f, snap(self.drawDistanceSlider.value, 0.05f));
+    self.scrollSpeedSlider.value = MAX(0.5f, MIN(2.0f, snap(self.scrollSpeedSlider.value, 0.1f)));
+    self.drawDistanceSlider.value = MAX(0.5f, MIN(2.0f, snap(self.drawDistanceSlider.value, 0.05f)));
     self.fpsSlider.value = MAX(60.0f, snap(self.fpsSlider.value, 5.0f));
 
     self.maxCameraValue.text = [NSString stringWithFormat:@"%.0f", self.maxCameraSlider.value];
