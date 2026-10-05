@@ -1248,49 +1248,206 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
                                  self, @selector(networkJoinPressed));
     UIButton *back = MakeButton(@"Назад", self, @selector(networkModeBackPressed));
 
+    self.networkOnlineMode = online;
+    self.networkSelectedLobbyID = nil;
+
     self.networkStatus = MakeLabel(online
-        ? @"ONLINE: готово к созданию/поиску лобби."
+        ? @"ONLINE: загружаю временные игровые лобби…"
         : @"LAN: готово к поиску игроков.",
         13.0, UIFontWeightSemibold);
     self.networkStatus.textAlignment = NSTextAlignmentLeft;
-    self.networkStatus.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
+    self.networkStatus.textColor = [UIColor colorWithWhite:0.70 alpha:1.0);
+
+    self.networkLobbyList = [[UIStackView alloc] init];
+    self.networkLobbyList.translatesAutoresizingMaskIntoConstraints = NO;
+    self.networkLobbyList.axis = UILayoutConstraintAxisVertical;
+    self.networkLobbyList.spacing = 7.0;
+    self.networkLobbyList.alignment = UIStackViewAlignmentFill;
+
+    self.networkStartButton = MakeButton(@"▶  ЗАПУСТИТЬ ИГРУ", self, @selector(networkStartGamePressed));
+    self.networkStartButton.backgroundColor = [UIColor colorWithRed:0.04 green:0.46 blue:0.95 alpha:1.0];
+    self.networkStartButton.hidden = YES;
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         title, hint, self.networkNameField, self.networkPasswordField,
-        create, refresh, join, self.networkStatus, back
+        self.networkLobbyList, create, refresh, join, self.networkStartButton,
+        self.networkStatus, back
     ]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.axis = UILayoutConstraintAxisVertical;
-    stack.spacing = 10.0;
+    stack.spacing = 8.0;
     [self.networkModeView addSubview:stack];
 
     [NSLayoutConstraint activateConstraints:@[
         [stack.leadingAnchor constraintEqualToAnchor:self.networkModeView.leadingAnchor constant:22.0],
         [stack.trailingAnchor constraintEqualToAnchor:self.networkModeView.trailingAnchor constant:-22.0],
-        [stack.centerYAnchor constraintEqualToAnchor:self.networkModeView.centerYAnchor],
-        [self.networkNameField.heightAnchor constraintEqualToConstant:48.0],
-        [self.networkPasswordField.heightAnchor constraintEqualToConstant:48.0]
+        [stack.topAnchor constraintEqualToAnchor:self.networkModeView.topAnchor constant:18.0],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:self.networkModeView.bottomAnchor constant:-18.0],
+        [self.networkNameField.heightAnchor constraintEqualToConstant:44.0],
+        [self.networkPasswordField.heightAnchor constraintEqualToConstant:44.0]
     ]];
 
     self.networkView.hidden = YES;
     self.modalBackdrop.hidden = NO;
+
+    if (online)
+        [self networkRefreshPressed];
 }
 
 - (void)networkCreatePressed
 {
-    self.networkStatus.text = [NSString stringWithFormat:@"Создание лобби: %@ — пароль %@.",
-                               self.networkNameField.text.length ? self.networkNameField.text : @"Без названия",
-                               self.networkPasswordField.text.length ? @"задан" : @"не задан"];
+    if (!self.networkOnlineMode) {
+        self.networkStatus.text = @"LAN-режим пока оставлен отдельным: используйте LAN-лобби игры.";
+        return;
+    }
+
+    NSString *name = self.networkNameField.text.length ? self.networkNameField.text : @"GeneralsXZH Lobby";
+    NSString *password = self.networkPasswordField.text ?: @"";
+    self.networkStatus.text = @"Создаю лобби и поднимаю виртуальную LAN…";
+
+    NSDictionary *body = @{
+        @"userId": GXOnlineUserID(),
+        @"playerName": GXOnlinePlayerName(),
+        @"name": name,
+        @"password": password,
+        @"maxPlayers": @4
+    };
+
+    GXOnlineJSONRequest(@"POST", @"/v1/lobbies", body, ^(NSDictionary *json, NSError *error) {
+        if (error) {
+            self.networkStatus.text = [NSString stringWithFormat:@"✕ Не удалось создать лобби: %@", error.localizedDescription];
+            return;
+        }
+        [self connectVPNFromLobbyResponse:json host:YES];
+    });
 }
 
 - (void)networkRefreshPressed
 {
-    self.networkStatus.text = @"Обновление списка игр…";
+    if (!self.networkOnlineMode) {
+        self.networkStatus.text = @"LAN: отдельный режим.";
+        return;
+    }
+
+    self.networkStatus.text = @"Обновление списка лобби…";
+    GXOnlineJSONRequest(@"GET", @"/v1/lobbies", nil, ^(NSDictionary *json, NSError *error) {
+        if (error) {
+            self.networkStatus.text = [NSString stringWithFormat:@"✕ Онлайн API: %@", error.localizedDescription];
+            return;
+        }
+
+        for (UIView *view in self.networkLobbyList.arrangedSubviews)
+            [self.networkLobbyList removeArrangedSubview:view], [view removeFromSuperview];
+
+        NSArray *lobbies = [json[@"lobbies"] isKindOfClass:[NSArray class]] ? json[@"lobbies"] : @[];
+        if (lobbies.count == 0) {
+            UILabel *empty = MakeLabel(@"Лобби не найдены.\nСоздай свою игру кнопкой выше.", 13.0, UIFontWeightMedium);
+            empty.textAlignment = NSTextAlignmentLeft;
+            empty.textColor = [UIColor colorWithWhite:0.55 alpha:1.0];
+            [self.networkLobbyList addArrangedSubview:empty];
+        } else {
+            for (NSDictionary *lobby in lobbies) {
+                NSString *name = lobby[@"name"] ?: @"GeneralsXZH Lobby";
+                NSNumber *players = lobby[@"players"];
+                NSNumber *maxPlayers = lobby[@"maxPlayers"];
+                NSString *map = lobby[@"map"] ?: @"Official Map";
+                UIButton *button = MakeButton(
+                    [NSString stringWithFormat:@"⚔  %@   •   %@/%@\n%@", name, players ?: @0, maxPlayers ?: @0, map],
+                    self, @selector(networkLobbySelected:));
+                button.titleLabel.numberOfLines = 2;
+                button.titleLabel.textAlignment = NSTextAlignmentLeft;
+                button.titleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
+                button.accessibilityIdentifier = lobby[@"id"];
+                button.backgroundColor = [UIColor colorWithWhite:0.07 alpha:0.94];
+                [self.networkLobbyList addArrangedSubview:button];
+            }
+        }
+        self.networkStatus.text = [NSString stringWithFormat:@"Найдено лобби: %lu. Выбери игру и нажми «Подключиться».",
+                                   (unsigned long)lobbies.count];
+    });
+}
+
+- (void)networkLobbySelected:(UIButton *)sender
+{
+    self.networkSelectedLobbyID = sender.accessibilityIdentifier;
+    self.networkStatus.text = [NSString stringWithFormat:@"Выбрано лобби: %@", sender.titleLabel.text ?: @""];
 }
 
 - (void)networkJoinPressed
 {
-    self.networkStatus.text = @"Подключение к выбранному лобби…";
+    if (!self.networkOnlineMode) {
+        self.networkStatus.text = @"LAN: подключение выполняется через LAN-меню игры.";
+        return;
+    }
+    if (self.networkSelectedLobbyID.length == 0) {
+        self.networkStatus.text = @"Сначала выбери лобби из списка.";
+        return;
+    }
+
+    self.networkStatus.text = @"Подключаюсь к лобби и виртуальной LAN…";
+    NSDictionary *body = @{
+        @"userId": GXOnlineUserID(),
+        @"playerName": GXOnlinePlayerName(),
+        @"password": self.networkPasswordField.text ?: @""
+    };
+    NSString *path = [NSString stringWithFormat:@"/v1/lobbies/%@/join", self.networkSelectedLobbyID];
+    GXOnlineJSONRequest(@"POST", path, body, ^(NSDictionary *json, NSError *error) {
+        if (error) {
+            self.networkStatus.text = [NSString stringWithFormat:@"✕ Не удалось подключиться: %@", error.localizedDescription];
+            return;
+        }
+        [self connectVPNFromLobbyResponse:json host:NO];
+    });
+}
+
+- (void)connectVPNFromLobbyResponse:(NSDictionary *)json host:(BOOL)host
+{
+    NSDictionary *vpn = [json[@"vpn"] isKindOfClass:[NSDictionary class]] ? json[@"vpn"] : nil;
+    NSString *relay = vpn[@"relayURL"];
+    NSString *lobbyID = vpn[@"lobbyId"];
+    NSString *token = vpn[@"playerToken"];
+    NSString *virtualIP = vpn[@"virtualIP"];
+
+    if (relay.length == 0 || lobbyID.length == 0 || token.length == 0 || virtualIP.length == 0) {
+        self.networkStatus.text = @"✕ API не выдал параметры виртуальной LAN.";
+        return;
+    }
+
+    self.networkStatus.text = [NSString stringWithFormat:@"Подключение виртуальной LAN…\nIP: %@", virtualIP];
+    self.networkStartButton.hidden = NO;
+    self.networkStartButton.enabled = NO;
+
+    if (!GeneralsXStartVPN(relay.UTF8String, lobbyID.UTF8String, token.UTF8String, virtualIP.UTF8String)) {
+        self.networkStatus.text = @"✕ Не удалось запустить Network Extension.";
+        self.networkStartButton.hidden = YES;
+        return;
+    }
+
+    __weak GXProfileLauncherViewController *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        GXProfileLauncherViewController *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.networkStartButton.enabled = YES;
+        strongSelf.networkStatus.text = [NSString stringWithFormat:
+            @"✓ Виртуальная LAN подключена\nIP: %@\n%@",
+            virtualIP,
+            host ? @"Ты HOST. Дождись игроков и запускай игру." : @"Ты подключён к HOST."];
+    });
+}
+
+- (void)networkStartGamePressed
+{
+    if (!GeneralsXVPNIsConnected()) {
+        self.networkStatus.text = @"Подожди: виртуальная LAN ещё подключается.";
+        return;
+    }
+
+    self.networkStatus.text = @"Запускаю Generals через виртуальную LAN…";
+    self.modalBackdrop.hidden = YES;
+    [self.networkModeView removeFromSuperview];
+    self.networkModeView = nil;
+    self.networkView.hidden = YES;
+    SetSelectedProfile(@"vanilla");
 }
 
 - (void)networkModeBackPressed
