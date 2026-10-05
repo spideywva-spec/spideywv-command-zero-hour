@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: generalsxzh-online-api
+    runtime: docker
+    dockerfilePath: ./server/online-api/Dockerfile
+    autoDeploy: true
+    healthCheckPath: /v1/health
+    disk:
+      name: generalsxzh-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: PUBLIC_ORIGIN
+        value: "*"
+      - key: DATA_DIR
+        value: /app/data
