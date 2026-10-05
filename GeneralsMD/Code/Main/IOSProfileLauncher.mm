@@ -343,7 +343,7 @@ NSString *DefaultIOSIPadOverrides()
             @"  CameraPitch = 37.0\n"
             @"  EnforceMaxCameraHeight = No\n"
             @"  KeyboardScrollSpeedFactor = 1.0\n"
-            @"  TerrainDrawDistanceScale = 1.45\n"
+            @"  TerrainDrawDistanceScale = 1.60\n"
             @"  UseFPSLimit = Yes\n"
             @"  FramesPerSecondLimit = 60\n"
             @"End\n";
