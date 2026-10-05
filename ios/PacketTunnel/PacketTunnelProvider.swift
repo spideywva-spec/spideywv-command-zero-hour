@@ -85,7 +85,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func discoverMappedCandidate(localPort: UInt16, completion: @escaping (Result<[String: Any], Error>) -> Void) {
         let params = NWParameters.udp
-        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: localPort)!)
+        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: NWEndpoint.Port(rawValue: localPort)!)
         let conn = NWConnection(host: NWEndpoint.Host(stunServers[0]), port: 19302, using: params)
         let transaction = (0..<12).map { _ in UInt8.random(in: 0...255) }
         var packet = Data([0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42])
