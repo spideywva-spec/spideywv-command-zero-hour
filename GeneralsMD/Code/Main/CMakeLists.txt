@@ -82,6 +82,23 @@ target_sources(z_generals PRIVATE
 # Keep launcher UI in its own dylib: launcher-only changes can then be rebuilt and
 # repackaged without recompiling the whole GeneralsX engine.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_sources(z_generals PRIVATE
+        AppleOnlineTunnel.h
+        AppleOnlineTunnel.mm
+    )
+    set_source_files_properties(AppleOnlineTunnel.mm PROPERTIES
+        SKIP_PRECOMPILE_HEADERS ON
+        COMPILE_OPTIONS "-fobjc-arc"
+    )
+    find_library(NETWORKEXTENSION_FRAMEWORK NetworkExtension REQUIRED)
+    find_library(NETWORK_FRAMEWORK Network REQUIRED)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    target_link_libraries(z_generals PRIVATE
+        ${NETWORKEXTENSION_FRAMEWORK}
+        ${NETWORK_FRAMEWORK}
+        ${FOUNDATION_FRAMEWORK}
+    )
+
     set(GX_PROJECT_VERSION "0.0.0")
     set(GX_ENGINE_VERSION "0.0.0")
     set(GX_LAUNCHER_VERSION "0.0.0")
