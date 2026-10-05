@@ -1,0 +1,21 @@
+name: VPN Render Test
+
+on:
+  push:
+    branches: [vpn-render-test]
+  workflow_dispatch:
+
+jobs:
+  build-vpn-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build standalone VPN test
+        working-directory: ios
+        run: |
+          xcodebuild             -project VPNRenderTest.xcodeproj             -scheme VPNRenderTest             -sdk iphonesimulator             -configuration Debug             CODE_SIGNING_ALLOWED=NO             build
