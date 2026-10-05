@@ -343,7 +343,7 @@ NSString *DefaultIOSIPadOverrides()
             @"  CameraPitch = 37.0\n"
             @"  EnforceMaxCameraHeight = No\n"
             @"  KeyboardScrollSpeedFactor = 1.0\n"
-            @"  TerrainDrawDistanceScale = 1.35\n"
+            @"  TerrainDrawDistanceScale = 1.45\n"
             @"  UseFPSLimit = Yes\n"
             @"  FramesPerSecondLimit = 60\n"
             @"End\n";
@@ -2162,7 +2162,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
             self.scrollSpeedSlider.value,
             self.drawDistanceSlider.value,
             self.fpsLimitSwitch.on ? @"Yes" : @"No",
-            self.fpsSlider.value];
+            MAX(60.0f, self.fpsSlider.value)];
 
     NSError *iosError = nil;
     BOOL iosOK = [iosOverrides writeToFile:IOSIPadOverridesPath()
@@ -2432,7 +2432,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.cameraPitchSlider.value = 37.0f;
     self.enforceMaxSwitch.on = NO;
     self.scrollSpeedSlider.value = 1.0f;
-    self.drawDistanceSlider.value = 1.35f;
+    self.drawDistanceSlider.value = 1.45f;
     self.fpsLimitSwitch.on = YES;
     self.fpsSlider.value = 60.0f;
     [self settingsSliderChanged:nil];
@@ -2491,7 +2491,7 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
         self.cameraPitchSlider.value = [self floatSetting:@"CameraPitch" contents:contents fallback:37.0f];
         self.enforceMaxSwitch.on = [self boolSetting:@"EnforceMaxCameraHeight" contents:contents fallback:NO];
         self.scrollSpeedSlider.value = [self floatSetting:@"KeyboardScrollSpeedFactor" contents:contents fallback:1.0f];
-        self.drawDistanceSlider.value = [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.35f];
+        self.drawDistanceSlider.value = [self floatSetting:@"TerrainDrawDistanceScale" contents:contents fallback:1.45f];
         self.fpsLimitSwitch.on = [self boolSetting:@"UseFPSLimit" contents:contents fallback:YES];
         self.fpsSlider.value = [self floatSetting:@"FramesPerSecondLimit" contents:contents fallback:60.0f];
         self.settingsStatus.text = @"";
@@ -2527,9 +2527,9 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     self.maxCameraSlider.value = snap(self.maxCameraSlider.value, 10.0f);
     self.minCameraSlider.value = snap(self.minCameraSlider.value, 5.0f);
     self.cameraPitchSlider.value = snap(self.cameraPitchSlider.value, 1.0f);
-    self.scrollSpeedSlider.value = snap(self.scrollSpeedSlider.value, 0.1f);
-    self.drawDistanceSlider.value = snap(self.drawDistanceSlider.value, 0.05f);
-    self.fpsSlider.value = snap(self.fpsSlider.value, 5.0f);
+    self.scrollSpeedSlider.value = MAX(1.0f, snap(self.scrollSpeedSlider.value, 0.1f));
+    self.drawDistanceSlider.value = MAX(1.45f, snap(self.drawDistanceSlider.value, 0.05f));
+    self.fpsSlider.value = MAX(60.0f, snap(self.fpsSlider.value, 5.0f));
 
     self.maxCameraValue.text = [NSString stringWithFormat:@"%.0f", self.maxCameraSlider.value];
     self.minCameraValue.text = [NSString stringWithFormat:@"%.0f", self.minCameraSlider.value];
