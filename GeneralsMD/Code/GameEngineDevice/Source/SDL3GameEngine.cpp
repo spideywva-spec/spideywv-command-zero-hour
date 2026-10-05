@@ -18,12 +18,6 @@
 
 /*
 ** SDL3GameEngine.cpp
-**
-** Linux implementation of GameEngine using SDL3 for windowing/input.
-**
-** TheSuperHackers @feature CnC_Generals_Linux 07/02/2026
-** Provides SDL3-based input and window management for Linux builds.
-** Based on fighter19 reference implementation.
 */
 
 #ifndef _WIN32
@@ -143,25 +137,26 @@ bool  s_haveSynth = false;
 float s_camX = 0.0f;
 float s_camY = 0.0f;
 
-// Метки времени последнего реального движения пальцев для зума и
-// поворота. Пока они свежие — движок продолжает плавно зумить/крутить
-// через флаги InGameUI. Как только палец остановился — флаги сбрасываются.
-Uint64 s_lastPinchMotionTicks = 0;
-Uint64 s_lastRotateMotionTicks = 0;
+// Сколько пикселей пинча даёт один "полный щелчок" колеса (wheelY = 1.0,
+// что в SDL3Mouse превращается в wheelPos = 120). Чем меньше число, тем
+// чувствительнее зум. Отправляем wheel напрямую из FINGER_MOTION
+// дробными порциями — движок сам складывает их в target zoom, никаких
+// накопителей и никаких ступенек.
+constexpr float kPinchPxPerClick    = 6.0f;
+constexpr float kPinchMinMovePx     = 1.0f;
 
 constexpr Uint64 kSelectionHoldMs   = 250;
 constexpr Uint64 kBuildRotateHoldMs = 200;
 constexpr Uint64 kDoubleTapMs       = 300;
 constexpr Uint64 kTwoFingerTapMs    = 300;
-constexpr Uint64 kZoomIdleResetMs   = 90;
-constexpr Uint64 kRotateIdleResetMs = 90;
 
 constexpr float kMoveDeadzonePx     = 5.0f;
 constexpr float kDoubleTapDistPx    = 40.0f;
 constexpr float kTwoFingerTapMaxPx  = 20.0f;
 constexpr float kRotateThresholdDeg = 25.0f;
-constexpr float kPinchNoisePx       = 0.3f;
-constexpr float kTwistNoiseRad      = 0.005f;
+// 1 радиан поворота пальцев = 15 px сдвига MMB — медленный, плавный
+// поворот камеры, без резких рывков.
+constexpr float kRotatePixelsPerRad = 15.0f;
 constexpr float kPi = 3.14159265358979323846f;
 
 static bool isBuildingPlacementMode()
@@ -253,16 +248,9 @@ static void sendBtnUp(SDL3Mouse *mouse, SDL_Window *window, float x, float y, Ui
 	sendMouseExplicit(mouse, window, SDL_EVENT_MOUSE_BUTTON_UP, x, y, 0.0f, 0.0f, btn, 0.0f, clicks);
 }
 
-// Сброс всех "камера-флагов" — вызывается при завершении двухпальцевого
-// жеста и в reset(). Пока флаги включены, движок сам плавно интерполирует.
-static void clearAllCameraFlags()
+static void sendWheel(SDL3Mouse *mouse, SDL_Window *window, float x, float y, float wheelY)
 {
-	if (TheInGameUI) {
-		TheInGameUI->setCameraZoomIn(FALSE);
-		TheInGameUI->setCameraZoomOut(FALSE);
-		TheInGameUI->setCameraRotateLeft(FALSE);
-		TheInGameUI->setCameraRotateRight(FALSE);
-	}
+	sendMouseExplicit(mouse, window, SDL_EVENT_MOUSE_WHEEL, x, y, 0.0f, 0.0f, 0, wheelY);
 }
 
 static void resetTouchState()
@@ -275,8 +263,6 @@ static void resetTouchState()
 	s_touch.lastTapX = ltx; s_touch.lastTapY = lty;
 	s_touch.haveLastTap = hlt;
 	s_haveSynth = false;
-	s_lastPinchMotionTicks = 0;
-	s_lastRotateMotionTicks = 0;
 }
 
 static void emitTap(SDL3Mouse *mouse, SDL_Window *window, float x, float y)
@@ -316,15 +302,13 @@ static void releaseAllButtons(SDL3Mouse *mouse, SDL_Window *window)
 	}
 }
 
-// Покадровый вызов. Проверяет удержание 200 мс для вращения здания и
-// сбрасывает флаги InGameUI, когда палец остановился больше 90 мс назад.
-// Пока флаги активны, движок сам плавно интерполирует зум и поворот —
-// никаких рывков, всё линейно и предсказуемо.
+// Покадровый вызов. Только таймер удержания 200 мс для вращения здания.
+// Зум и поворот шлются сразу из FINGER_MOTION — для плавности нужен
+// максимально низкий отклик, без буферизации.
 static void updateTouchFrame(SDL3Mouse *mouse, SDL_Window *window)
 {
 	if (!mouse || !window) return;
 
-	// Таймер удержания 200 мс для вращения здания.
 	if (s_touch.phase == TouchState::BuildPending &&
 	    s_touch.finger1 != 0 &&
 	    !s_touch.firstFingerMoved &&
@@ -334,25 +318,6 @@ static void updateTouchFrame(SDL3Mouse *mouse, SDL_Window *window)
 		s_touch.lastY = s_touch.downY;
 		sendMotionNoDelta(mouse, window, s_touch.downX, s_touch.downY);
 		sendBtnDown(mouse, window, s_touch.downX, s_touch.downY, SDL_BUTTON_LEFT);
-	}
-
-	const Uint64 now = SDL_GetTicks();
-
-	// Палец не двигается больше 90 мс — гасим зум.
-	if (TheInGameUI &&
-	    (s_touch.phase != TouchState::TwoFinger ||
-	     now - s_lastPinchMotionTicks > kZoomIdleResetMs)) {
-		TheInGameUI->setCameraZoomIn(FALSE);
-		TheInGameUI->setCameraZoomOut(FALSE);
-	}
-
-	// Палец не крутится больше 90 мс — гасим поворот.
-	if (TheInGameUI &&
-	    (s_touch.phase != TouchState::TwoFinger ||
-	     !s_touch.rotationArmed ||
-	     now - s_lastRotateMotionTicks > kRotateIdleResetMs)) {
-		TheInGameUI->setCameraRotateLeft(FALSE);
-		TheInGameUI->setCameraRotateRight(FALSE);
 	}
 }
 
@@ -371,7 +336,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 		const bool keepBuildPending = (s_touch.phase == TouchState::BuildPending ||
 		                               s_touch.phase == TouchState::BuildMoving);
 		releaseAllButtons(mouse, window);
-		clearAllCameraFlags();
 		resetTouchState();
 		if (keepBuildPending) {
 			s_touch.phase = TouchState::BuildPending;
@@ -426,9 +390,6 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.pinchMoved = false;
 			s_touch.rotationArmed = false;
 			s_touch.rotationAccum = 0.0f;
-			s_lastPinchMotionTicks = 0;
-			s_lastRotateMotionTicks = 0;
-			clearAllCameraFlags();
 			s_touch.phase = TouchState::TwoFinger;
 			return;
 		}
@@ -451,53 +412,38 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			s_touch.pinchCurrentDistance = dist;
 			s_touch.pinchCurrentAngle    = angle;
 
+			const float cx = (s_touch.f1x + s_touch.f2x) * 0.5f * (float)width;
+			const float cy = (s_touch.f1y + s_touch.f2y) * 0.5f * (float)height;
+
 			if (!s_touch.rotationArmed) {
-				// Зум: пока палец разводится/сводится, держим флаг InGameUI.
-				// Движок сам плавно интерполирует за кадр, никаких ступенек.
-				if (SDL_fabsf(distDelta) > kPinchNoisePx) {
+				// Зум. Каждый motion event шлёт свой кусочек wheelY. Движок
+				// складывает их в target zoom, поэтому зум идёт плавно и
+				// скорость его 1:1 зависит от скорости движения пальцев.
+				// Никаких накопителей, никаких задержек на кадр.
+				if (SDL_fabsf(distDelta) > kPinchMinMovePx) {
 					s_touch.pinchMoved = true;
-					s_lastPinchMotionTicks = SDL_GetTicks();
-					if (TheInGameUI) {
-						if (distDelta > 0.0f) {
-							// Разводим пальцы — приближаем.
-							TheInGameUI->setCameraZoomIn(TRUE);
-							TheInGameUI->setCameraZoomOut(FALSE);
-						} else {
-							// Сводим пальцы — отдаляем.
-							TheInGameUI->setCameraZoomOut(TRUE);
-							TheInGameUI->setCameraZoomIn(FALSE);
-						}
-					}
+					const float wheelY = distDelta / kPinchPxPerClick;
+					sendWheel(mouse, window, cx, cy, wheelY);
 				}
 
-				// Порог поворота: 25° накопленного угла.
+				// Порог поворота 25° — до него только зум.
 				s_touch.rotationAccum += angleDelta;
 				const float deg = SDL_fabsf(s_touch.rotationAccum) * (180.0f / kPi);
 				if (deg >= kRotateThresholdDeg) {
 					s_touch.rotationArmed = true;
 					s_touch.pinchMoved = true;
-					// При переходе в поворот глушим зум, чтобы не было
-					// одновременного дёргания двух эффектов.
-					if (TheInGameUI) {
-						TheInGameUI->setCameraZoomIn(FALSE);
-						TheInGameUI->setCameraZoomOut(FALSE);
-					}
-					s_lastRotateMotionTicks = SDL_GetTicks();
+					sendMotionNoDelta(mouse, window, cx, cy);
+					sendBtnDown(mouse, window, cx, cy, SDL_BUTTON_MIDDLE);
 				}
 			} else {
-				// Поворот: держим флаг InGameUI. Движок сам крутит камеру
-				// с постоянной скоростью, пока флаг активен.
-				if (SDL_fabsf(angleDelta) > kTwistNoiseRad) {
-					s_lastRotateMotionTicks = SDL_GetTicks();
-					if (TheInGameUI) {
-						if (angleDelta > 0.0f) {
-							TheInGameUI->setCameraRotateRight(TRUE);
-							TheInGameUI->setCameraRotateLeft(FALSE);
-						} else {
-							TheInGameUI->setCameraRotateLeft(TRUE);
-							TheInGameUI->setCameraRotateRight(FALSE);
-						}
-					}
+				// Поворот активен. Каждый motion event даёт свою порцию
+				// MMB drag. kRotatePixelsPerRad мал — поворот плавный,
+				// без резких скачков, скорость пропорциональна скорости
+				// кручения пальцев.
+				if (SDL_fabsf(angleDelta) > 0.0005f) {
+					const float shift = angleDelta * kRotatePixelsPerRad;
+					const float newX = s_synthX + shift;
+					sendMotion(mouse, window, newX, s_synthY);
 				}
 			}
 			return;
@@ -597,8 +543,9 @@ static void handleTouchEvent(SDL3Mouse *mouse, SDL_Window *window, const SDL_Eve
 			else return;
 			if (s_touch.finger1 != 0 || s_touch.finger2 != 0) return;
 
-			// Всегда глушим флаги, даже если это был короткий тап.
-			clearAllCameraFlags();
+			if (s_touch.rotationArmed) {
+				sendBtnUp(mouse, window, s_synthX, s_synthY, SDL_BUTTON_MIDDLE);
+			}
 
 			const Uint64 held = SDL_GetTicks() - s_touch.twoFingerDownTicks;
 			const bool isTap = (held <= kTwoFingerTapMs) &&
