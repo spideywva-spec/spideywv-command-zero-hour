@@ -1,0 +1,6 @@
+# Render only needs the online API service and Dockerfile.
+*
+!Dockerfile
+!server/
+!server/online-api/
+!server/online-api/**
