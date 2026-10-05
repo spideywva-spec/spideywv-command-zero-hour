@@ -1,4 +1,5 @@
 #include "IOSProfileLauncher.h"
+#include "IOSGeneralsVPN.h"
 #import "IOSGameFileManager.h"
 
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
@@ -40,6 +41,72 @@ namespace
 std::atomic<bool> gLauncherFinished(false);
 char gSelectedProfile[32] = "vanilla";
 GeneralsXIOSDiagnosticClearCallback gDiagnosticClearCallback = nullptr;
+NSString *GXOnlineAPIBaseURL()
+{
+    return @"https://spideywv-command-zero-hour.onrender.com";
+}
+
+NSString *GXOnlineUserID()
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *value = [defaults stringForKey:@"GeneralsXOnlineUserID"];
+    if (value.length > 0) return value;
+    value = [[NSUUID UUID] UUIDString].lowercaseString;
+    [defaults setObject:value forKey:@"GeneralsXOnlineUserID"];
+    [defaults synchronize];
+    return value;
+}
+
+NSString *GXOnlinePlayerName()
+{
+    NSString *name = [[NSUserDefaults standardUserDefaults] stringForKey:@"GeneralsXOnlinePlayerName"];
+    return name.length > 0 ? name : @"Spidey Player";
+}
+
+void GXOnlineJSONRequest(NSString *method, NSString *path, NSDictionary *body,
+                         void (^completion)(NSDictionary *json, NSError *error))
+{
+    NSURL *url = [NSURL URLWithString:[GXOnlineAPIBaseURL() stringByAppendingString:path]];
+    if (url == nil) {
+        completion(nil, [NSError errorWithDomain:@"GeneralsXOnline" code:1
+                                         userInfo:@{NSLocalizedDescriptionKey:@"Invalid online API URL"}]);
+        return;
+    }
+
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = method;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:@"3" forHTTPHeaderField:@"X-Client-Version"];
+    if (body != nil)
+        request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request
+                                    completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, error); });
+            return;
+        }
+        NSError *jsonError = nil;
+        NSDictionary *json = data.length > 0
+            ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : @{};
+        NSInteger status = [(NSHTTPURLResponse *)response statusCode];
+        if (jsonError != nil || ![json isKindOfClass:[NSDictionary class]]) {
+            NSError *e = jsonError ?: [NSError errorWithDomain:@"GeneralsXOnline" code:2
+                                                   userInfo:@{NSLocalizedDescriptionKey:@"Invalid API response"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, e); });
+            return;
+        }
+        if (status < 200 || status >= 300) {
+            NSString *message = json[@"error"] ?: @"Online API error";
+            NSError *e = [NSError errorWithDomain:@"GeneralsXOnline" code:status
+                                         userInfo:@{NSLocalizedDescriptionKey:message}];
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, e); });
+            return;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(json, nil); });
+    }] resume];
+}
+
 
 NSString *ShortBuildIdentifier(const char *raw)
 {
@@ -492,6 +559,10 @@ UIButton *MakeButton(NSString *title, id target, SEL action)
 @property(nonatomic, strong) UIView *networkView;
 @property(nonatomic, strong) UIView *networkModeView;
 @property(nonatomic, strong) UILabel *networkStatus;
+@property(nonatomic, strong) UIStackView *networkLobbyList;
+@property(nonatomic, strong) UIButton *networkStartButton;
+@property(nonatomic, copy) NSString *networkSelectedLobbyID;
+@property(nonatomic, assign) BOOL networkOnlineMode;
 @property(nonatomic, strong) UITextField *networkNameField;
 @property(nonatomic, strong) UITextField *networkPasswordField;
 @property(nonatomic, strong) UILabel *diagnosticsText;
