@@ -1331,7 +1331,13 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 	_PresentParameters.EnableAutoDepthStencil = TRUE;				// Driver will attempt to match Z-buffer depth
 	_PresentParameters.Flags=0;											// We're not going to lock the backbuffer
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// Do not let the swap chain add another implicit v-sync wait. The engine's
+	// high-resolution FrameRateLimit is the only iOS frame pacer.
+	_PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+#else
 	_PresentParameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+#endif
 	_PresentParameters.FullScreen_RefreshRateInHz = D3DPRESENT_RATE_DEFAULT;
 
 	/*
@@ -3991,7 +3997,11 @@ DX8Wrapper::Create_Additional_Swap_Chain (HWND render_window)
 	params.AutoDepthStencilFormat				= _PresentParameters.AutoDepthStencilFormat;
 	params.Flags									= 0;
 	params.FullScreen_RefreshRateInHz		= D3DPRESENT_RATE_DEFAULT;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	params.FullScreen_PresentationInterval	= D3DPRESENT_INTERVAL_IMMEDIATE;
+#else
 	params.FullScreen_PresentationInterval	= D3DPRESENT_INTERVAL_DEFAULT;
+#endif
 
 	//
 	//	Create the swap chain
