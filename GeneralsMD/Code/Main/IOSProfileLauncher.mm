@@ -2159,8 +2159,8 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
             self.minCameraSlider.value,
             self.cameraPitchSlider.value,
             self.enforceMaxSwitch.on ? @"Yes" : @"No",
-            self.scrollSpeedSlider.value,
-            self.drawDistanceSlider.value,
+            MAX(1.0f, self.scrollSpeedSlider.value),
+            MAX(1.45f, self.drawDistanceSlider.value),
             self.fpsLimitSwitch.on ? @"Yes" : @"No",
             MAX(60.0f, self.fpsSlider.value)];
 
@@ -2243,12 +2243,12 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
     gameOptions[@"FogEffects"] = self.zeroHourFogSwitch.on ? @"yes" : @"no";
     gameOptions[@"FPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
     gameOptions[@"UseFPSLimit"] = self.fpsLimitSwitch.on ? @"yes" : @"no";
-    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%.0f", self.fpsSlider.value];
+    gameOptions[@"FramesPerSecondLimit"] = [NSString stringWithFormat:@"%.0f", MAX(60.0f, self.fpsSlider.value)];
     gameOptions[@"MaxCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.maxCameraSlider.value];
     gameOptions[@"MinCameraHeight"] = [NSString stringWithFormat:@"%.1f", self.minCameraSlider.value];
     gameOptions[@"CameraPitch"] = [NSString stringWithFormat:@"%.1f", self.cameraPitchSlider.value];
-    gameOptions[@"TerrainDrawDistanceScale"] = [NSString stringWithFormat:@"%.2f", self.drawDistanceSlider.value];
-    gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(self.scrollSpeedSlider.value * 100.0f)];
+    gameOptions[@"TerrainDrawDistanceScale"] = [NSString stringWithFormat:@"%.2f", MAX(1.45f, self.drawDistanceSlider.value)];
+    gameOptions[@"ScrollFactor"] = [NSString stringWithFormat:@"%ld", lroundf(MAX(1.0f, self.scrollSpeedSlider.value) * 100.0f)];
 
     NSError *optionsError = nil;
     BOOL canonicalOptionsOK = WriteKeyValueFile(EngineOptionsPath(), gameOptions, &optionsError);
