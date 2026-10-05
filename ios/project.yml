@@ -60,7 +60,7 @@ targets:
       - path: GeneralsVPN/PacketTunnelProvider.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: me.ammaar.generalszh.GeneralsVPN
+        PRODUCT_BUNDLE_IDENTIFIER: "$(GX_BUNDLE_ID).GeneralsVPN"
         DEVELOPMENT_TEAM: 7S264298H8
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
