@@ -1,12 +1,11 @@
 {
-  "name": "generalsxzh-online-api",
-  "version": "3.0.0",
+  "name": "vpn-render-test",
+  "version": "1.0.0",
   "private": true,
-  "description": "Persistent lobby and social API for GeneralsXZH",
+  "description": "Minimal Render WebSocket relay for iOS PacketTunnelProvider testing",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node test.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=20"
