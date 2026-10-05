@@ -19,6 +19,10 @@ targets:
     platform: iOS
     sources:
       - path: Stub
+    dependencies:
+      - target: GeneralsVPN
+    entitlements:
+      path: Stub/GeneralsXZH.entitlements
     resources:
       - path: ../resources/intro.mp4
     settings:
@@ -48,3 +52,20 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UIApplicationSupportsIndirectInputEvents: true
         NSLocalNetworkUsageDescription: "Used for LAN multiplayer game discovery."
+
+  GeneralsVPN:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GeneralsVPN/PacketTunnelProvider.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.ammaar.generalszh.GeneralsVPN
+        DEVELOPMENT_TEAM: 7S264298H8
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: YES
+    info:
+      path: GeneralsVPN/Info.plist
+    entitlements:
+      path: GeneralsVPN/GeneralsVPN.entitlements
