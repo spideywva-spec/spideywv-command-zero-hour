@@ -69,6 +69,10 @@
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 
 
 #define MIPMAP_BUMP_TEXTURE
@@ -2425,6 +2429,15 @@ void WaterRenderObjClass::renderWaterMesh()
 
 //	m_pDev->SetRenderState(D3DRS_ZFUNC,D3DCMP_ALWAYS);	//used to display grid under map.
 
+	DWORD previousWaterZFunc = D3DCMP_LESSEQUAL;
+	m_pDev->GetRenderState(D3DRS_ZFUNC, &previousWaterZFunc);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS/MoltenVK can reject the water surface on tiny depth differences at
+	// the terrain/water boundary. Water does not write depth, so LESSEQUAL is
+	// the stable comparison here and avoids a dark/black shoreline seam.
+	m_pDev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+#endif
+
 	m_pDev->SetIndices(m_indexBufferD3D,m_vertexBufferD3DOffset);
 	m_pDev->SetStreamSource(0,m_vertexBufferD3D,sizeof(MaterMeshVertexFormat));
 	m_pDev->SetVertexShader(WATER_MESH_FVF);
@@ -2446,11 +2459,21 @@ void WaterRenderObjClass::renderWaterMesh()
 		//write to the zbuffer.  Change to LESSEQUAL.
 		DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP,0,mx*my,0,m_numIndices-2);
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+		m_pDev->SetRenderState(D3DRS_ZFUNC, previousWaterZFunc);
+#else
 		DX8Wrapper::_Get_D3D_Device8()->SetRenderState(D3DRS_ZFUNC, D3DCMP_EQUAL);
+#endif
 		W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
 	}
 	else
 		m_pDev->DrawIndexedPrimitive(D3DPT_TRIANGLESTRIP,0,mx*my,0,m_numIndices-2);
+
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// Restore the render state so the water pass cannot leak a depth compare
+	// mode into the following terrain/particle/drawable passes.
+	m_pDev->SetRenderState(D3DRS_ZFUNC, previousWaterZFunc);
+#endif
 
 	Debug_Statistics::Record_DX8_Polys_And_Vertices(m_numIndices-2,mx*my,ShaderClass::_PresetOpaqueShader);
 
