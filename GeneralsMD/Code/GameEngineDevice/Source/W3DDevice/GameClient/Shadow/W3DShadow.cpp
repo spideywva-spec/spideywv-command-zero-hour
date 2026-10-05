@@ -78,13 +78,15 @@ void DoShadows(RenderInfoClass & rinfo, Bool stencilPass)
 
 	//Projected shadows render first because they may fill the stencil buffer
 	//which will be used by the shadow volumes
-	if (stencilPass == FALSE  && TheW3DProjectedShadowManager)
+	if (stencilPass == FALSE && TheGlobalData->m_useShadowDecals &&
+		TheW3DProjectedShadowManager)
 	{
-			if (TheW3DShadowManager->isShadowScene())
-				projectionCount=TheW3DProjectedShadowManager->renderShadows(rinfo);
+		if (TheW3DShadowManager->isShadowScene())
+			projectionCount=TheW3DProjectedShadowManager->renderShadows(rinfo);
 	}
 
-	if (stencilPass == TRUE && TheW3DVolumetricShadowManager)
+	if (stencilPass == TRUE && TheGlobalData->m_useShadowVolumes &&
+		TheW3DVolumetricShadowManager)
 	{
 
 //		TheW3DShadowManager->loadTerrainShadows();
@@ -132,12 +134,18 @@ Bool W3DShadowManager::init()
 {
 	Bool result=TRUE;
 
-	if	(TheW3DVolumetricShadowManager && TheW3DVolumetricShadowManager->init())
+	// iOS performance profile: initialize only the shadow path that is actually
+	// enabled. Projected shadows remain enabled and are used as the lightweight
+	// fallback when volumetric/stencil shadows are disabled.
+	if (TheGlobalData->m_useShadowVolumes &&
+		TheW3DVolumetricShadowManager && TheW3DVolumetricShadowManager->init())
 	{
 		if (TheW3DVolumetricShadowManager->ReAcquireResources())
 			result = TRUE;
 	}
-	if ( TheW3DProjectedShadowManager && TheW3DProjectedShadowManager->init())
+
+	if (TheGlobalData->m_useShadowDecals &&
+		TheW3DProjectedShadowManager && TheW3DProjectedShadowManager->init())
 	{
 		if (TheW3DProjectedShadowManager->ReAcquireResources())
 			result = TRUE;
@@ -184,17 +192,32 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 	if (shadowInfo)
 		type = shadowInfo->m_type;
 
-	// GeneralsX @bugfix BenderAI 21/03/2026 ShadowType contains bit flags; route by mask instead of exact enum value.
-	if (type & SHADOW_VOLUME)
+	// Prefer the original volumetric path when explicitly enabled.
+	if ((type & SHADOW_VOLUME) && TheGlobalData->m_useShadowVolumes)
 	{
 		if (TheW3DVolumetricShadowManager)
 			return (Shadow *)TheW3DVolumetricShadowManager->addShadow(robj, shadowInfo, draw);
 	}
 
-	if (type & (SHADOW_PROJECTION | SHADOW_DYNAMIC_PROJECTION | SHADOW_DECAL | SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL))
+	if (TheGlobalData->m_useShadowDecals && TheW3DProjectedShadowManager)
 	{
-		if (TheW3DProjectedShadowManager)
+		if (type & (SHADOW_PROJECTION | SHADOW_DYNAMIC_PROJECTION | SHADOW_DECAL |
+			SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL))
 			return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, shadowInfo, draw);
+
+		// Most game objects request SHADOW_VOLUME by default. When the iOS
+		// performance profile disables stencil volumes, convert that request into
+		// a generated projected shadow so units/buildings still cast visible shadows.
+		if (type & SHADOW_VOLUME)
+		{
+			Shadow::ShadowTypeInfo fallbackInfo;
+			if (shadowInfo)
+				fallbackInfo = *shadowInfo;
+			fallbackInfo.m_type = SHADOW_PROJECTION;
+			fallbackInfo.m_ShadowName[0] = '\0';
+			fallbackInfo.allowUpdates = TRUE;
+			return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &fallbackInfo, draw);
+		}
 	}
 
 	return nullptr;
