@@ -122,6 +122,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         IOSProfileLauncher.h
         IOSProfileLauncher.mm
         IOSGameFileManager.h
+        IOSGeneralsVPN.h
+        IOSGeneralsVPN.mm
         IOSGameFileManager.mm
     )
     set_target_properties(generalsx_ios_launcher PROPERTIES
@@ -132,6 +134,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     )
     target_include_directories(generalsx_ios_launcher PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    set_source_files_properties(IOSGeneralsVPN.mm PROPERTIES
+        SKIP_PRECOMPILE_HEADERS ON
+        COMPILE_OPTIONS "-fobjc-arc"
     )
 
     set_source_files_properties(IOSProfileLauncher.mm PROPERTIES
@@ -147,6 +154,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
     find_library(AVFOUNDATION_FRAMEWORK AVFoundation REQUIRED)
     find_library(COREMEDIA_FRAMEWORK CoreMedia REQUIRED)
+    find_library(NETWORKEXTENSION_FRAMEWORK NetworkExtension REQUIRED)
     find_library(OBJC_LIBRARY objc REQUIRED)
     find_library(ZLIB_LIBRARY z REQUIRED)
     target_link_libraries(generalsx_ios_launcher PRIVATE
@@ -155,6 +163,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${QUARTZCORE_FRAMEWORK}
         ${AVFOUNDATION_FRAMEWORK}
         ${COREMEDIA_FRAMEWORK}
+        ${NETWORKEXTENSION_FRAMEWORK}
         ${OBJC_LIBRARY}
         ${ZLIB_LIBRARY}
     )
