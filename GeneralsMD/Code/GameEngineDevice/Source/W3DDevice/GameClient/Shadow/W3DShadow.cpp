@@ -210,7 +210,9 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 			decalInfo = *shadowInfo;
 		decalInfo.m_type = SHADOW_DECAL;
 		decalInfo.m_ShadowName[0] = '\0';
-		decalInfo.allowUpdates = TRUE;
+		// Retail shadow.tga is static on iOS; avoid per-frame dynamic-shadow work
+        // for every unit/building in large armies.
+        decalInfo.allowUpdates = FALSE;
 
 		Shadow *decalShadow =
 			(Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &decalInfo, draw);
