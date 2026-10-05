@@ -202,6 +202,21 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 	if ((type & SHADOW_VOLUME) && TheGlobalData->m_useShadowDecals &&
 		TheW3DProjectedShadowManager)
 	{
+		// iOS/DXVK: use the retail shadow blob first.  It is a cheap, reliable
+		// terrain decal and does not depend on render-to-texture/stencil support.
+		// If shadow.tga is unavailable, fall back to the generated projected path.
+		Shadow::ShadowTypeInfo decalInfo;
+		if (shadowInfo)
+			decalInfo = *shadowInfo;
+		decalInfo.m_type = SHADOW_DECAL;
+		decalInfo.m_ShadowName[0] = '\0';
+		decalInfo.allowUpdates = TRUE;
+
+		Shadow *decalShadow =
+			(Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &decalInfo, draw);
+		if (decalShadow)
+			return decalShadow;
+
 		Shadow::ShadowTypeInfo projectedInfo;
 		if (shadowInfo)
 			projectedInfo = *shadowInfo;
