@@ -192,11 +192,40 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 	if (shadowInfo)
 		type = shadowInfo->m_type;
 
-	// Prefer the original volumetric path when explicitly enabled.
+	// iOS/DXVK compatibility:
+	// The legacy stencil-volume path can report a usable stencil surface while
+	// still producing no visible shadow on Metal/Vulkan. Prefer the generated
+	// projected path on iOS. The UI's 3D/2D shadow switches still control whether
+	// the shadow system is enabled, but the backend uses the reliable projected
+	// implementation so units/buildings actually cast a visible shadow.
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	if ((type & SHADOW_VOLUME) && TheGlobalData->m_useShadowDecals &&
+		TheW3DProjectedShadowManager)
+	{
+		Shadow::ShadowTypeInfo projectedInfo;
+		if (shadowInfo)
+			projectedInfo = *shadowInfo;
+		projectedInfo.m_type = SHADOW_PROJECTION;
+		projectedInfo.m_ShadowName[0] = '\0';
+		projectedInfo.allowUpdates = TRUE;
+
+		Shadow *projectedShadow =
+			(Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &projectedInfo, draw);
+		if (projectedShadow)
+			return projectedShadow;
+	}
+#endif
+
+	// Prefer the original volumetric path where it is known to be usable.
 	if ((type & SHADOW_VOLUME) && TheGlobalData->m_useShadowVolumes)
 	{
 		if (TheW3DVolumetricShadowManager)
-			return (Shadow *)TheW3DVolumetricShadowManager->addShadow(robj, shadowInfo, draw);
+		{
+			Shadow *volumeShadow =
+				(Shadow *)TheW3DVolumetricShadowManager->addShadow(robj, shadowInfo, draw);
+			if (volumeShadow)
+				return volumeShadow;
+		}
 	}
 
 	if (TheGlobalData->m_useShadowDecals && TheW3DProjectedShadowManager)
@@ -205,9 +234,8 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 			SHADOW_ALPHA_DECAL | SHADOW_ADDITIVE_DECAL))
 			return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, shadowInfo, draw);
 
-		// Most game objects request SHADOW_VOLUME by default. When the iOS
-		// performance profile disables stencil volumes, convert that request into
-		// a generated projected shadow so units/buildings still cast visible shadows.
+		// Final fallback for normal SHADOW_VOLUME requests: generate a projected
+		// shadow if the stencil/volume implementation cannot create one.
 		if (type & SHADOW_VOLUME)
 		{
 			Shadow::ShadowTypeInfo fallbackInfo;
@@ -216,7 +244,9 @@ Shadow *W3DShadowManager::addShadow( RenderObjClass *robj, Shadow::ShadowTypeInf
 			fallbackInfo.m_type = SHADOW_PROJECTION;
 			fallbackInfo.m_ShadowName[0] = '\0';
 			fallbackInfo.allowUpdates = TRUE;
-			return (Shadow *)TheW3DProjectedShadowManager->addShadow(robj, &fallbackInfo, draw);
+
+			return (Shadow *)TheW3DProjectedShadowManager->addShadow(
+				robj, &fallbackInfo, draw);
 		}
 	}
 
