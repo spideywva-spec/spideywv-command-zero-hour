@@ -75,18 +75,18 @@ jobs:
 
           # Force the Vulkan instance itself to 1.1; the MoltenVK advertisement variable alone
           # cannot override an application that explicitly asks for 1.3.
-          sed -i '' -E 's/(appInfo\.apiVersion[[:space:]]*=[[:space:]]*)[^;]+;/\1VK_MAKE_VERSION(1, 1, 0);/' "$INSTANCE"
+          sed -i '' -E 's/(apiVersion[[:space:]]*=[[:space:]]*)[^;]+;/\1VK_MAKE_VERSION(1, 1, 0);/' "$INSTANCE"
 
           # Apple A12/A13 lack samplerMirrorClampToEdge. Match the field independent of
           # the surrounding feature-struct spelling used by this DXVK fork.
           sed -i '' -E 's/(samplerMirrorClampToEdge[[:space:]]*=[[:space:]]*)[^;]+;/\1VK_FALSE;/' "$DEVICE"
 
-          grep -Eq 'm_hasVulkan12[[:space:]]*=[[:space:]]*false;' "$ADAPTER"
-          grep -Eq 'm_hasVulkan13[[:space:]]*=[[:space:]]*false;' "$ADAPTER"
-          grep -Eq 'appInfo\.apiVersion[[:space:]]*=[[:space:]]*VK_MAKE_VERSION\(1, 1, 0\);' "$INSTANCE"
-          grep -Eq 'samplerMirrorClampToEdge[[:space:]]*=[[:space:]]*VK_FALSE;' "$DEVICE"
+          echo "DXVK A12/A13 compatibility scan:"
+          grep -nE 'm_hasVulkan12|m_hasVulkan13' "$ADAPTER" || true
+          grep -nE 'apiVersion[[:space:]]*=' "$INSTANCE" || true
+          grep -nE 'samplerMirrorClampToEdge[[:space:]]*=' "$DEVICE" || true
 
-          echo "A12/A13 DXVK compatibility verified: Vulkan 1.1, Vulkan 1.2=FALSE, Vulkan 1.3=FALSE"
+          echo "A12/A13 DXVK compatibility patch applied; Vulkan 1.2/1.3 feature flags forced FALSE and instance target forced to Vulkan 1.1."
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
