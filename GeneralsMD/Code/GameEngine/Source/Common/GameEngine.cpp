@@ -872,17 +872,16 @@ void GameEngine::init()
 
 		TheSubsystemList->postProcessLoadAll();
 
-		// GeneralsX @bugfix 05/10/2026 Keep iOS render pacing at a real 60 FPS when
-		// launcher/settings did not provide a valid limit.  BaseFps remains the
-		// historical 30 FPS logic baseline; it must not become the iOS render cap.
-		if (TheGlobalData->m_framesPerSecondLimit <= 0)
-		{
+		// GeneralsX @bugfix 05/10/2026: keep iOS render pacing at a real 60 FPS.
+		// Old Options.ini files can contain 55 (or another sub-60 value); that must
+		// not silently turn the iOS build into a 55 FPS target.
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+		if (TheGlobalData->m_framesPerSecondLimit < 60)
 			TheWritableGlobalData->m_framesPerSecondLimit = 60;
 #else
+		if (TheGlobalData->m_framesPerSecondLimit <= 0)
 			TheWritableGlobalData->m_framesPerSecondLimit = BaseFps;
 #endif
-		}
 
 		TheFramePacer->setFramesPerSecondLimit(TheGlobalData->m_framesPerSecondLimit);
 
