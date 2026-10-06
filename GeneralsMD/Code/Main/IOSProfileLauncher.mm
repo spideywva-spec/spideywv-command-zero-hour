@@ -792,24 +792,12 @@ void GeneralsXSetIOSDiagnosticClearCallback(GeneralsXIOSDiagnosticClearCallback 
                                                     icon:@"stethoscope"
                                                    action:@selector(showDiagnostics)
                                                accentColor:[UIColor colorWithRed:0.38 green:0.90 blue:0.72 alpha:1.0]];
-
-    UIButton *onlineAction = [self makeLauncherCard:@"ONLINE"
-                                           subtitle:@"Интернет-лобби"
-                                              icon:@"globe"
-                                             action:@selector(showOnlineLobby)
-                                         accentColor:[UIColor colorWithRed:0.30 green:0.68 blue:1.0 alpha:1.0]];
-
-    UIButton *lanAction = [self makeLauncherCard:@"ЛОКАЛЬНАЯ СЕТЬ"
-                                         subtitle:@"LAN / Wi-Fi"
-                                            icon:@"network"
-                                           action:@selector(showLocalLobby)
-                                       accentColor:[UIColor colorWithRed:0.25 green:0.86 blue:0.50 alpha:1.0]];
-
+    // Online/LAN launcher entries are intentionally removed from the native iOS shell.
+    // Network code remains in the engine, but unfinished lobby UI must not be reachable
+    // from the normal launcher and must not participate in startup.
     [actions addArrangedSubview:gameFileAction];
     [actions addArrangedSubview:settingsAction];
     [actions addArrangedSubview:diagnosticsAction];
-    [actions addArrangedSubview:onlineAction];
-    [actions addArrangedSubview:lanAction];
     [content addArrangedSubview:actions];
 
     UIView *systemCard = [[UIView alloc] init];
