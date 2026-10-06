@@ -1,4 +1,5 @@
 "use strict";
+const PUBLIC_PORT=Number(process.env.PORT||8080);
 const http=require("http");
 const devPanel=require("./devpanel");
 
@@ -27,4 +28,4 @@ const srv=http.createServer(async(req,res)=>{
   }
   proxy(req,res);
 });
-srv.listen(Number(process.env.PUBLIC_PORT||process.env.PORT||8080),"0.0.0.0",()=>console.log("SpideyDev gateway listening"));
+srv.listen(PUBLIC_PORT,"0.0.0.0",()=>console.log("SpideyDev gateway listening"));
