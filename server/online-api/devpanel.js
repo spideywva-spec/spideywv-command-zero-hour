@@ -1,0 +1,51 @@
+"use strict";
+const fs=require("fs"), path=require("path"), crypto=require("crypto");
+const USER=process.env.SPIDEYDEV_USER||"weyva";
+const PASS=process.env.SPIDEYDEV_PASSWORD_SHA256||"2cde8d18812e77ae6c37f92a9b86f1414cf1616d37809947481eec5d8ab92951";
+const ROOT=path.resolve(process.env.SPIDEYDEV_SITE_DIR||path.join(process.env.DATA_DIR||path.join(__dirname,"data"),"site"));
+const sessions=new Map(), MAX=8*1024*1024;
+const hash=s=>crypto.createHash("sha256").update(String(s)).digest("hex");
+function safe(p){p=String(p||"").replace(/\\/g,"/").replace(/^\/+/,"");if(!p||p.includes("\0"))return null;const a=p.split("/").filter(Boolean);if(a.some(x=>x==="."||x===".."))return null;const f=path.resolve(ROOT,...a),r=ROOT+path.sep;return f===ROOT||f.startsWith(r)?f:null}
+function rel(f){return path.relative(ROOT,f).replace(/\\/g,"/")}
+function token(req){const m=String(req.headers.cookie||"").match(/(?:^|;\s*)spideydev_session=([^;]+)/);return m?decodeURIComponent(m[1]):""}
+function auth(req){const s=sessions.get(token(req));return !!(s&&s.exp>Date.now())}
+function send(res,n,obj,extra){res.writeHead(n,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...extra});res.end(JSON.stringify(obj))}
+function page(res,s){res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"});res.end(s)}
+function read(req,lim=MAX){return new Promise((ok,no)=>{let d="";req.on("data",c=>{d+=c;if(d.length>lim)no(Error("body_too_large"))});req.on("end",()=>{try{ok(d?JSON.parse(d):{})}catch(e){no(Error("invalid_json"))}});req.on("error",no)})}
+function files(dir=ROOT,prefix=""){if(!fs.existsSync(dir))return[];let a=[];for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(e.name.startsWith("."))continue;const f=path.join(dir,e.name),p=prefix?prefix+"/"+e.name:e.name;if(e.isDirectory())a=a.concat(files(f,p));else{const st=fs.statSync(f);a.push({path:p,size:st.size})}}return a.sort((a,b)=>a.path.localeCompare(b.path))}
+const LOGIN='<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpideyDev</title><style>body{margin:0;background:#07090b;color:#eee;font:16px system-ui;display:grid;place-items:center;min-height:100vh}.c{width:min(390px,90%);background:#111519;border:1px solid #333;padding:28px;border-radius:16px}input,button{width:100%;padding:12px;margin-top:12px;border-radius:9px;box-sizing:border-box}input{background:#080a0c;color:white;border:1px solid #444}button{background:#c9a23a;border:0;font-weight:700}#e{color:#f66;margin-top:10px}</style><form class="c" id="f"><h1>SpideyDev</h1><p>Developer access</p><input id="u" placeholder="Login" autocomplete="username"><input id="p" type="password" placeholder="Password" autocomplete="current-password"><div id="e"></div><button>Войти</button></form><script>f.onsubmit=async e=>{e.preventDefault();let r=await fetch("/spideydev/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user:u.value,password:p.value})});if(r.ok)location="/spideydev";else document.getElementById("e").textContent="Неверный логин или пароль"}</script>';
+const PANEL='<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>SpideyDev</title><style>*{box-sizing:border-box}body{margin:0;background:#07090b;color:#eee;font:14px system-ui}header{height:58px;padding:0 14px;border-bottom:1px solid #292d31;display:flex;align-items:center;justify-content:space-between}button{background:#171b1e;color:#eee;border:1px solid #444;border-radius:7px;padding:9px 12px;cursor:pointer}.gold{background:#c9a23a;color:#080808;border:0;font-weight:700}.grid{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - 58px)}aside{padding:12px;border-right:1px solid #292d31;overflow:auto}.f{padding:8px;border-radius:6px;color:#bbb;cursor:pointer}.f:hover,.sel{background:#191d20;color:white}.bar{padding:10px;display:flex;gap:7px;border-bottom:1px solid #292d31}.bar input{flex:1;background:#0b0d0f;color:#ddd;border:1px solid #444;border-radius:7px;padding:9px}.ed{width:100%;height:calc(100% - 54px);resize:none;background:#080a0c;color:#eee;border:0;outline:0;padding:15px;font:13px monospace}.st{padding:6px 12px;color:#888;font-size:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}aside{max-height:35vh;border-right:0;border-bottom:1px solid #292d31}.ed{height:55vh}}</style><header><b>SPIDEYDEV</b><span><button onclick="window.open("/site/")">Сайт</button> <button onclick="logout()">Выйти</button></span></header><div class="grid"><aside><button class="gold" onclick="nf()">+ Новый файл</button> <button onclick="nd()">+ Папка</button><div id="fs"></div></aside><main><div class="bar"><input id="pn" placeholder="Файл"><button onclick="save()">Сохранить</button><button onclick="up()">Загрузить</button><button onclick="del()">Удалить</button><input id="file" type="file" hidden></div><textarea id="ed" class="ed"></textarea><div id="st" class="st">Готово</div></main></div><script>
+let cur="";
+const q=id=>document.getElementById(id);
+async function api(u,o){let r=await fetch(u,o);if(r.status===401){location="/spideydev/login";return}let d=await r.json();if(!r.ok)throw Error(d.error||"Ошибка");return d}
+async function list(){let d=await api("/spideydev/api/files");q("fs").innerHTML=d.files.map(x=>"<div class='f "+(x.path===cur?"sel":"")+"' onclick='openf("+JSON.stringify(x.path)+")'>📄 "+esc(x.path)+" <small>"+fmt(x.size)+"</small></div>").join("")||"<p>Нет файлов</p>"}
+function esc(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function fmt(n){return n<1024?n+" B":n<1048576?(n/1024).toFixed(1)+" KB":(n/1048576).toFixed(1)+" MB"}
+async function openf(p){let d=await api("/spideydev/api/file?path="+encodeURIComponent(p));cur=p;q("pn").value=p;q("ed").value=d.content;q("st").textContent="Открыт: "+p;list()}
+async function save(){if(!cur)return;await api("/spideydev/api/file",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:cur,content:q("ed").value})});q("st").textContent="Сохранено: "+cur}
+async function nf(){let p=prompt("Путь нового файла","index.html");if(!p)return;await api("/spideydev/api/file",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:p,content:""})});await list();openf(p)}
+async function nd(){let p=prompt("Путь папки","assets");if(p)await api("/spideydev/api/folder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:p})});list()}
+async function del(){if(!cur||!confirm("Удалить "+cur+"?"))return;await api("/spideydev/api/file?path="+encodeURIComponent(cur),{method:"DELETE"});cur="";q("pn").value="";q("ed").value="";list()}
+function up(){q("file").click()}
+q("file").onchange=async()=>{let f=q("file").files[0];if(!f)return;if(f.size>8388608)return alert("Файл больше 8 MB");let b=await new Promise((ok,no)=>{let r=new FileReader();r.onload=()=>ok(r.result.split(",")[1]);r.onerror=no;r.readAsDataURL(f)});await api("/spideydev/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path:f.name,base64:b})});q("file").value="";list();openf(f.name)}
+async function logout(){await fetch("/spideydev/logout",{method:"POST"});location="/spideydev/login"}list()
+</script>';
+async function handle(req,res,u){
+ if(u.pathname==="/spideydev/login"&&req.method==="GET")return page(res,LOGIN);
+ if(u.pathname==="/spideydev/login"&&req.method==="POST"){try{const b=await read(req,32768);if(String(b.user||"")===USER&&hash(b.password||"")===PASS){const t=crypto.randomBytes(32).toString("hex");sessions.set(t,{exp:Date.now()+28800000});res.writeHead(302,{"Location":"/spideydev","Set-Cookie":"spideydev_session="+encodeURIComponent(t)+"; HttpOnly; SameSite=Strict; Path=/spideydev; Max-Age=28800"});return res.end()}return send(res,401,{error:"invalid_credentials"})}catch(e){return send(res,400,{error:e.message})}}
+ if(u.pathname==="/spideydev/logout"&&req.method==="POST"){sessions.delete(token(req));return send(res,200,{ok:true},{"Set-Cookie":"spideydev_session=; HttpOnly; SameSite=Strict; Path=/spideydev; Max-Age=0"})}
+ if(u.pathname==="/spideydev"||u.pathname==="/spideydev/"){if(!auth(req))return page(res,LOGIN);fs.mkdirSync(ROOT,{recursive:true});return page(res,PANEL)}
+ if(!u.pathname.startsWith("/spideydev/api/"))return false;
+ if(!auth(req))return send(res,401,{error:"unauthorized"});
+ fs.mkdirSync(ROOT,{recursive:true});
+ try{
+  if(u.pathname==="/spideydev/api/files"&&req.method==="GET")return send(res,200,{files:files()});
+  if(u.pathname==="/spideydev/api/file"&&req.method==="GET"){const f=safe(u.searchParams.get("path"));if(!f||!fs.existsSync(f)||!fs.statSync(f).isFile())return send(res,404,{error:"file_not_found"});return send(res,200,{path:rel(f),content:fs.readFileSync(f,"utf8")})}
+  if(u.pathname==="/spideydev/api/file"&&req.method==="POST"){const b=await read(req);const f=safe(b.path),c=String(b.content??"");if(!f)return send(res,400,{error:"invalid_path"});if(Buffer.byteLength(c)>MAX)return send(res,413,{error:"file_too_large"});fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,c,"utf8");return send(res,200,{ok:true})}
+  if(u.pathname==="/spideydev/api/file"&&req.method==="DELETE"){const f=safe(u.searchParams.get("path"));if(!f||f===ROOT||!fs.existsSync(f)||!fs.statSync(f).isFile())return send(res,404,{error:"file_not_found"});fs.unlinkSync(f);return send(res,200,{ok:true})}
+  if(u.pathname==="/spideydev/api/folder"&&req.method==="POST"){const b=await read(req);const f=safe(b.path);if(!f||f===ROOT)return send(res,400,{error:"invalid_path"});fs.mkdirSync(f,{recursive:true});return send(res,200,{ok:true})}
+  if(u.pathname==="/spideydev/api/upload"&&req.method==="POST"){const b=await read(req,MAX*2),f=safe(b.path);if(!f)return send(res,400,{error:"invalid_path"});const x=Buffer.from(String(b.base64||""),"base64");if(x.length>MAX)return send(res,413,{error:"file_too_large"});fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,x);return send(res,200,{ok:true})}
+  return send(res,404,{error:"not_found"})
+ }catch(e){return send(res,e.message==="body_too_large"?413:500,{error:e.message||"server_error"})}
+}
+module.exports={handle,ROOT};
