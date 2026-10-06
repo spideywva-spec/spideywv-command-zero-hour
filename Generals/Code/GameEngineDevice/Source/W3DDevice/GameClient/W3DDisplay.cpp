@@ -965,6 +965,8 @@ void W3DDisplay::init()
 			// TheSuperHackers @feature Mauller 13/03/2026 Add native MSAA support, must be set before creating render device
 			WW3D::Set_MSAA_Mode((WW3D::MultiSampleModeEnum)TheWritableGlobalData->m_antiAliasLevel);
 
+			fprintf(stderr, "DEBUG: W3DDisplay::init() Set_Render_Device %dx%d depth=%d windowed=%d\\n",
+				getWidth(), getHeight(), getBitDepth(), getWindowed());
 			renderDeviceError = WW3D::Set_Render_Device(
 				0,
 				getWidth(),
@@ -972,6 +974,7 @@ void W3DDisplay::init()
 				getBitDepth(),
 				getWindowed(),
 				true );
+			fprintf(stderr, "DEBUG: W3DDisplay::init() Set_Render_Device result=%d\\n", (int)renderDeviceError);
 
 			// TheSuperHackers @info Update the MSAA mode that was set as some GPU's may not support certain levels
 			// Texture filtering must also be updated after render device initialization
