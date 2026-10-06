@@ -46,6 +46,9 @@ static void drawFramerateBar();
 #endif
 #include <time.h>
 #include <vector>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/FramePacer.h"
@@ -507,6 +510,17 @@ static void SDL3_ApplyWindowModeForRenderConfig(Bool windowed, Int renderWidth, 
 {
 	extern SDL_Window* TheSDL3Window;
 	if (!TheSDL3Window) return;
+
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	// iOS creates the SDL window in native fullscreen before DXVK creates its
+	// swapchain. Do not toggle fullscreen after device creation: that transition
+	// can invalidate the DXVK/MoltenVK surface on A13 and crash immediately after
+	// WW3D::Init(). Display resolution is still controlled by the render device.
+	(void)windowed;
+	(void)renderWidth;
+	(void)renderHeight;
+	return;
+#endif
 
 	if (!windowed) {
 		if (!SDL_SetWindowFullscreen(TheSDL3Window, false)) {
