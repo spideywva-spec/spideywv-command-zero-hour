@@ -5,7 +5,7 @@
   "description": "Persistent lobby and social API for GeneralsXZH",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node start.js",
     "test": "node test.js"
   },
   "engines": {
