@@ -37,6 +37,9 @@
 #include <cstdio>
 #include <unistd.h>   // _exit()
 #include <glob.h>     // glob() for Vulkan ICD discovery
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 // USER INCLUDES (match WinMain.cpp pattern)
 #include "Lib/BaseType.h"
@@ -303,6 +306,12 @@ int main(int argc, char* argv[])
 			// Create SDL3 window with Vulkan support
 			fprintf(stderr, "INFO: Creating SDL3 Vulkan window...\n");
 			Uint32 windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;  // Start hidden, show after D3D init
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+			// iOS windows are native fullscreen. Enter fullscreen before DXVK creates
+			// the swapchain so MoltenVK/DXVK never has to transition an existing
+			// swapchain into native fullscreen during W3DDisplay::init().
+			windowFlags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#endif
 			TheSDL3Window = SDL_CreateWindow(
 				"Command & Conquer Generals",
 				1024, 768,  // Default resolution
