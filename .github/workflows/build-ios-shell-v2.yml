@@ -1,0 +1,160 @@
+# iOS-only clean build
+name: A13 iOS Build V2 | Engine Shell
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - a13-ios-build-v2
+    paths:
+      - 'GeneralsMD/**'
+      - '!GeneralsMD/Code/Main/IOSProfileLauncher.mm'
+      - '!GeneralsMD/Code/Main/IOSProfileLauncher.h'
+      - 'Core/**'
+      - 'Dependencies/Utility/**'
+      - 'resources/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'vcpkg.json'
+      - 'vcpkg-lock.json'
+      - 'Patches/dxvk-ios.patch'
+      - 'ios/**'
+      - '!ios/version.env'
+      - 'scripts/build/ios/package-shell.sh'
+      - 'scripts/build/ios/fetch-moltenvk.sh'
+      - 'scripts/build/ios/stage-fonts.sh'
+      - '.github/workflows/build-ios-shell.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a13-ios-shell-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: GeneralsXZH iOS shell V2
+    runs-on: macos-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Checkout DXVK fork
+        run: git submodule update --init --recursive --depth 1 references/fbraz3-dxvk
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '18ff00a7d2697e23f22e2a2293c3fa6468a50c06'
+
+      - name: Install build tools
+        run: |
+          brew update
+          brew install cmake ninja meson pkg-config autoconf autoconf-archive automake libtool xcodegen glslang
+
+      - name: Install Vulkan SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="1.4.341.1"
+          ZIP="/tmp/vulkansdk-macos-${VERSION}.zip"
+          URL="https://sdk.lunarg.com/sdk/download/${VERSION}/mac/vulkansdk-macos-${VERSION}.zip"
+          SHA256="632cbe96c8ed6ed00c6ce25e3a7738c466134f76586e1c51f1419410d7f9042e"
+          EXTRACT="/tmp/vulkan-extract"
+          ROOT="$HOME/VulkanSDK/${VERSION}"
+
+          curl -fL --retry 3 --retry-delay 5 -o "${ZIP}" "${URL}"
+          echo "${SHA256}  ${ZIP}" | shasum -a 256 -c -
+          rm -rf "${EXTRACT}"
+          mkdir -p "${EXTRACT}"
+          unzip -q "${ZIP}" -d "${EXTRACT}"
+
+          INSTALLER=$(find "${EXTRACT}" -path "*/Contents/MacOS/vulkansdk-macOS-${VERSION}" -type f | head -1)
+          test -n "${INSTALLER}"
+          chmod +x "${INSTALLER}"
+          "${INSTALLER}" --root "${ROOT}" --accept-licenses --default-answer --confirm-command install
+
+          if [[ -d "${ROOT}/macOS" ]]; then SDK="${ROOT}/macOS"; else SDK="${ROOT}"; fi
+          test -f "${SDK}/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
+          test -d "${SDK}/include/vulkan"
+          echo "VULKAN_SDK=${SDK}" >> "${GITHUB_ENV}"
+
+      - name: Stage runtime resources
+        run: |
+          ./scripts/build/ios/fetch-moltenvk.sh
+          ./scripts/build/ios/stage-fonts.sh
+
+      - name: Configure iOS
+        env:
+          VULKAN_SDK: ${{ env.VULKAN_SDK }}
+          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
+          VCPKG_DEFAULT_TRIPLET: arm64-ios
+          CC: clang
+          CXX: clang++
+        run: |
+          mkdir -p logs
+          cmake --preset ios-vulkan 2>&1 | tee logs/configure_ios.log
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Build iOS engine
+        run: |
+          mkdir -p logs
+          NPROC=$(sysctl -n hw.ncpu)
+          cmake --build build/ios-vulkan --target z_generals -j "${NPROC}" 2>&1 | tee logs/build_ios.log
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Verify binary
+        run: |
+          BIN="build/ios-vulkan/GeneralsMD/GeneralsXZH.app/GeneralsXZH"
+          test -f "${BIN}"
+          file "${BIN}" | grep -q "Mach-O"
+          lipo -info "${BIN}" | grep -q arm64
+
+      - name: Package unsigned shell
+        env:
+          GX_BUNDLE_ID: com.dvorov.generalszh.launcher
+        run: |
+          chmod +x scripts/build/ios/package-shell.sh
+          ./scripts/build/ios/package-shell.sh
+          IPA="build/ios-package/GeneralsXZH-launcher-unsigned.ipa"
+          test -f "${IPA}"
+          unzip -l "${IPA}" | grep -q "Payload/GeneralsXZH.app/GeneralsXZH"
+          if unzip -l "${IPA}" | grep -q "Payload/GeneralsXZH.app/Launcher/"; then
+            echo "ERROR: legacy web launcher leaked into native shell"
+            exit 1
+          fi
+          echo "IPA_SIZE=$(du -h "${IPA}" | cut -f1)" >> "${GITHUB_ENV}"
+
+      - name: Upload shell
+        uses: actions/upload-artifact@v7
+        with:
+          name: GeneralsXZH-launcher-unsigned-v2
+          path: build/ios-package/GeneralsXZH-launcher-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: GeneralsXZH-ios-build-logs-v2
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## A13 iOS shell V2" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Engine: GeneralsXZH arm64" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Launcher: native UIKit" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Retail GameData: not included" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Mod profiles: not included" >> "${GITHUB_STEP_SUMMARY}"
+          echo "- Artifact size: ${IPA_SIZE}" >> "${GITHUB_STEP_SUMMARY}"
