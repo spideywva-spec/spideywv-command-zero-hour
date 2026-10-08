@@ -22,6 +22,10 @@
 bool g_bForceRelay = false;
 UnsignedInt m_exeCRCOriginal = 0;
 
+// Prevent Steam networking callbacks from re-entering a NetworkMesh while it is being destroyed.
+// The callback is global to GameNetworkingSockets, while NetworkMesh itself is short-lived.
+static std::atomic<bool> g_bNetworkMeshDestroying = false;
+
 // Pool for deferred deletion of ConnectionSignaling objects; avoids "delete this" races during
 // async Steam callbacks.
 static std::mutex g_pendingDeletionMutex;
@@ -48,6 +52,13 @@ static void CleanupPendingConnSignalingDeletions()
 // m_mapConnections is accessed here without m_mapConnectionsMutex.
 void OnSteamNetConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pInfo)
 {
+	// Disconnect() can close several sockets at once and those closes can generate
+	// callbacks synchronously. Never touch the mesh/signaling objects during teardown.
+	if (g_bNetworkMeshDestroying.load(std::memory_order_acquire))
+	{
+		return;
+	}
+
 	CleanupPendingConnSignalingDeletions();
 
 	NetworkMesh* pMesh = NGMP_OnlineServicesManager::GetNetworkMesh();
@@ -1125,12 +1136,22 @@ void NetworkMesh::Disconnect()
 
 	m_bDisconnected = true;
 
-    for (auto& connectionData : m_mapConnections)
-    {
-		connectionData.second.Close();
-    }
+	// NetworkMesh is owned by the lobby lifecycle, but Steam's connection callback is
+	// owned by the process-wide GameNetworkingSockets instance. Block callback re-entry
+	// before closing any socket or releasing the signaling client.
+	g_bNetworkMeshDestroying.store(true, std::memory_order_release);
 
-    m_mapConnections.clear();
+	{
+		std::lock_guard<std::recursive_mutex> lock(m_mapConnectionsMutex);
+
+		for (auto& connectionData : m_mapConnections)
+		{
+			connectionData.second.Close();
+		}
+
+		m_mapConnections.clear();
+		m_vecSignallingAwaitingTurn.clear();
+	}
 
 	if (AnticheatPlugInterface::DoesACPluginProvideSecureGameTransport())
 	{
@@ -1145,10 +1166,25 @@ void NetworkMesh::Disconnect()
 
 		m_hListenSock = k_HSteamListenSocket_Invalid;
 	}
+
+	// No new signaling may be polled after connections have been closed.
+	if (m_pSignaling != nullptr)
+	{
+		m_pSignaling->Release();
+		delete m_pSignaling;
+		m_pSignaling = nullptr;
+	}
+
+	// Keep the process-wide callback installed: NetworkMeshLibrary owns the global
+	// GameNetworkingSockets lifetime and will unregister it during full shutdown.
+	g_bNetworkMeshDestroying.store(false, std::memory_order_release);
 }
 
 void NetworkMesh::Tick()
 {
+	if (m_bDisconnected)
+		return;
+
 	// state reported from anticheat plugin threads; UpdateState reaches UI callbacks, so apply it here
 	std::vector<std::pair<int64_t, EConnectionState>> vecStateUpdates;
 	{
